@@ -27,24 +27,20 @@
     "baseUrl": ".",
     "paths": {
       "@/*": [
-        "./client/*"
-      ],
-      "@shared/*": [
-        "./shared/*"
+        "./native/*"
       ]
     }
   },
   "include": [
-    "client/**/*",
-    "server/**/*",
-    "shared/**/*",
     "native/**/*",
-    "vite.config.ts",
-    "vite.config.server.ts"
+    "index.js"
   ],
   "exclude": [
     "node_modules",
-    "dist"
+    "dist",
+    ".expo",
+    "android",
+    "ios"
   ],
   "extends": "expo/tsconfig.base"
 }
