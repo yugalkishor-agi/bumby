@@ -25,7 +25,7 @@ import { doc, getDoc, onSnapshot, updateDoc, serverTimestamp } from 'firebase/fi
 import { auth, db } from '../config/firebase';
 import { authService } from '../services/auth.service';
 import { userService } from '../services/user.service';
-import { multiAccountService } from '../services/multiAccount.service';
+import { multiAccountService, biometricPreferenceKey, isMultiAccountError } from '../services/multiAccount.service';
 import type { User } from '../types/database';
 
 interface SavedAccount {
@@ -49,7 +49,7 @@ interface AuthContextType {
   resetPassword: (email: string) => Promise<void>;
   // Multi-account features
   savedAccounts: SavedAccount[];
-  switchAccount: (accountId: string) => Promise<void>;
+  switchAccount: (accountId: string, alreadyBiometricVerified?: boolean) => Promise<void>;
   removeAccount: (accountId: string) => Promise<void>;
   enableBiometric: (accountId: string) => Promise<void>;
   disableBiometric: (accountId: string) => Promise<void>;
@@ -87,14 +87,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const loadSavedAccounts = async () => {
     try {
       const accounts = await multiAccountService.getAccounts();
-      setSavedAccounts(accounts.map((acc: any) => ({
+      const biometricFlags = await Promise.all(
+        accounts.map((acc: any) =>
+          AsyncStorage.getItem(biometricPreferenceKey(acc.userId)).then((v) => v === 'true')
+        )
+      );
+      setSavedAccounts(accounts.map((acc: any, index) => ({
         userId: acc.userId,
         email: acc.email,
         username: acc.username,
         displayName: acc.displayName,
         avatarURL: acc.avatarURL,
         lastLoginAt: new Date(acc.lastActive),
-        biometricEnabled: false // Will be implemented later
+        biometricEnabled: biometricFlags[index],
       })));
     } catch (error) {
       console.error('Failed to load saved accounts:', error);
@@ -327,12 +332,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   // Multi-account methods
-  const switchAccount = async (accountId: string) => {
+  const switchAccount = async (accountId: string, alreadyBiometricVerified = false) => {
     try {
       setLoading(true);
-      const result = await multiAccountService.switchAccount(accountId);
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to switch account');
+      try {
+        await multiAccountService.switchAccount(accountId, alreadyBiometricVerified);
+      } catch (error) {
+        if (alreadyBiometricVerified || !isMultiAccountError(error, 'biometric_required')) {
+          throw error;
+        }
+        // The account store refuses until this device re-authenticates. The
+        // prompt lives here because it needs UI; the store owns the policy.
+        const result = await LocalAuthentication.authenticateAsync({
+          promptMessage: 'Authenticate to switch accounts',
+          fallbackLabel: 'Use passcode',
+        });
+        if (!result.success) throw error;
+        await multiAccountService.switchAccount(accountId, true);
       }
       // Auth state change will trigger user update
     } catch (error) {
@@ -363,7 +379,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       // Store biometric preference
-      await AsyncStorage.setItem(`biometric_${accountId}`, 'true');
+      await AsyncStorage.setItem(biometricPreferenceKey(accountId), 'true');
       await loadSavedAccounts();
     } catch (error) {
       console.error('Failed to enable biometric:', error);
@@ -373,7 +389,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const disableBiometric = async (accountId: string) => {
     try {
-      await AsyncStorage.removeItem(`biometric_${accountId}`);
+      await AsyncStorage.removeItem(biometricPreferenceKey(accountId));
       await loadSavedAccounts();
     } catch (error) {
       console.error('Failed to disable biometric:', error);
@@ -392,7 +408,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // Show account picker or switch to last account
         const accounts = await multiAccountService.getAccounts();
         if (accounts.length > 0) {
-          await switchAccount(accounts[0].userId);
+          await switchAccount(accounts[0].userId, true);
         }
       }
     } catch (error) {

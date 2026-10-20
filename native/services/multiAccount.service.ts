@@ -44,6 +44,40 @@ interface AccountsData {
   activeAccountId: string;
 }
 
+/**
+ * Error contract for this file: mutators throw instead of returning
+ * `{ success, error }` envelopes. `code` is stable and safe to branch on;
+ * `message` is what gets surfaced to the user or logged. Reads keep using
+ * plain null / empty-array sentinels for "not found" and "nothing here".
+ */
+export type MultiAccountErrorCode =
+  | 'limit_reached'
+  | 'profile_not_found'
+  | 'account_exists'
+  | 'cooldown'
+  | 'account_not_found'
+  | 'biometric_required'
+  | 'credentials_missing'
+  | 'auth_failed';
+
+export class MultiAccountError extends Error {
+  readonly code: MultiAccountErrorCode;
+
+  constructor(code: MultiAccountErrorCode, message: string) {
+    super(message);
+    this.name = 'MultiAccountError';
+    this.code = code;
+  }
+}
+
+/** True when `error` came out of this service with a reason worth branching on. */
+export const isMultiAccountError = (error: unknown, code?: MultiAccountErrorCode): boolean =>
+  (error as MultiAccountError | undefined)?.name === 'MultiAccountError' &&
+  (code === undefined || (error as MultiAccountError).code === code);
+
+/** Per-account opt-in flag written by AuthContext's enableBiometric/disableBiometric. */
+export const biometricPreferenceKey = (accountId: string) => `biometric_${accountId}`;
+
 class MultiAccountService {
   private encryptionKey: CryptoKey | null = null;
 
@@ -218,77 +252,69 @@ class MultiAccountService {
   }
 
   /**
-   * Add a new account
+   * Add a new account.
+   *
+   * @returns the account as it was persisted.
+   * @throws {MultiAccountError} `limit_reached`, `profile_not_found` or
+   *   `account_exists`; any Firebase auth failure propagates untouched.
    */
-  async addAccount(
-    email: string,
-    password: string
-  ): Promise<{ success: boolean; account?: StoredAccount; error?: string }> {
-    try {
-      // Check account limit
-      if (!(await this.canAddAccount())) {
-        return { success: false, error: 'Maximum 3 accounts allowed' };
-      }
-
-      // Sign in to verify credentials
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      const firebaseUser = userCredential.user;
-
-      // Get user profile from Firestore
-      const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-      
-      if (!userDoc.exists()) {
-        return { success: false, error: 'User profile not found' };
-      }
-
-      const userData = userDoc.data();
-
-      // Check if account already exists
-      if (await this.hasAccount(firebaseUser.uid)) {
-        return { success: false, error: 'Account already added' };
-      }
-
-      // Get refresh token (Firebase automatically handles this)
-      const refreshToken = await firebaseUser.getIdToken();
-      const encryptedToken = await this.encryptToken(refreshToken);
-      
-      // Also encrypt password for seamless account switching
-      const encryptedPassword = await this.encryptToken(password);
-
-      // Create stored account
-      const newAccount: StoredAccount = {
-        userId: firebaseUser.uid,
-        username: userData.username,
-        email: firebaseUser.email || email,
-        displayName: userData.displayName || userData.username,
-        avatarURL: userData.avatarURL,
-        verified: userData.verified || false,
-        lastActive: Date.now(),
-        encryptedToken,
-        encryptedPassword
-      };
-
-      // Add to storage
-      const accounts = await this.getAccounts();
-      accounts.push(newAccount);
-
-      const accountsData: AccountsData = {
-        accounts,
-        activeAccountId: (await this.getActiveAccountId()) || newAccount.userId
-      };
-
-      await AsyncStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(accountsData));
-
-      console.log('✅ Account added successfully:', newAccount.username);
-      return { success: true, account: newAccount };
-
-    } catch (error: any) {
-      console.error('❌ Failed to add account:', error);
-      return { 
-        success: false, 
-        error: error.message || 'Failed to add account' 
-      };
+  async addAccount(email: string, password: string): Promise<StoredAccount> {
+    // Check account limit
+    if (!(await this.canAddAccount())) {
+      throw new MultiAccountError('limit_reached', 'Maximum 3 accounts allowed');
     }
+
+    // Sign in to verify credentials
+    const userCredential = await signInWithEmailAndPassword(auth, email, password);
+    const firebaseUser = userCredential.user;
+
+    // Get user profile from Firestore
+    const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+
+    if (!userDoc.exists()) {
+      throw new MultiAccountError('profile_not_found', 'User profile not found');
+    }
+
+    const userData = userDoc.data();
+
+    // Check if account already exists
+    if (await this.hasAccount(firebaseUser.uid)) {
+      throw new MultiAccountError('account_exists', 'Account already added');
+    }
+
+    // Get refresh token (Firebase automatically handles this)
+    const refreshToken = await firebaseUser.getIdToken();
+    const encryptedToken = await this.encryptToken(refreshToken);
+
+    // Also encrypt password for seamless account switching
+    const encryptedPassword = await this.encryptToken(password);
+
+    // Create stored account
+    const newAccount: StoredAccount = {
+      userId: firebaseUser.uid,
+      username: userData.username,
+      email: firebaseUser.email || email,
+      displayName: userData.displayName || userData.username,
+      avatarURL: userData.avatarURL,
+      verified: userData.verified || false,
+      lastActive: Date.now(),
+      encryptedToken,
+      encryptedPassword
+    };
+
+    // Add to storage
+    const accounts = await this.getAccounts();
+    accounts.push(newAccount);
+
+    const accountsData: AccountsData = {
+      accounts,
+      activeAccountId: (await this.getActiveAccountId()) || newAccount.userId
+    };
+
+    await AsyncStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(accountsData));
+
+    console.log('✅ Account added successfully:', newAccount.username);
+    return newAccount;
   }
 
   /**
@@ -300,143 +326,127 @@ class MultiAccountService {
   }
 
   /**
-   * Remove an account
+   * Remove an account.
+   *
+   * A no-op when there is nothing stored; anything else that goes wrong
+   * (sign-out, storage write) propagates to the caller.
    */
-  async removeAccount(userId: string): Promise<boolean> {
-    try {
-      const accounts = await this.getAccounts();
-      const activeId = await this.getActiveAccountId();
-      
-      if (accounts.length === 0) return false;
-      
-      const updatedAccounts = accounts.filter((acc: any) => acc.userId !== userId);
-      
-      // If removing active account, switch to another or clear
-      let newActiveId = activeId;
-      if (activeId === userId) {
-        newActiveId = updatedAccounts.length > 0 ? updatedAccounts[0].userId : '';
-        
-        // Sign out current user if removing active account
-        await authService.signOut();
-      }
-      
-      const accountsData: AccountsData = {
-        accounts: updatedAccounts,
-        activeAccountId: newActiveId || ''
-      };
-      
-      await AsyncStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(accountsData));
-      console.log('✅ Account removed:', userId);
-      return true;
-      
-    } catch (error) {
-      console.error('❌ Failed to remove account:', error);
-      return false;
+  async removeAccount(userId: string): Promise<void> {
+    const accounts = await this.getAccounts();
+    const activeId = await this.getActiveAccountId();
+
+    if (accounts.length === 0) return;
+
+    const updatedAccounts = accounts.filter((acc: any) => acc.userId !== userId);
+
+    // If removing active account, switch to another or clear
+    let newActiveId = activeId;
+    if (activeId === userId) {
+      newActiveId = updatedAccounts.length > 0 ? updatedAccounts[0].userId : '';
+
+      // Sign out current user if removing active account
+      await authService.signOut();
     }
+
+    const accountsData: AccountsData = {
+      accounts: updatedAccounts,
+      activeAccountId: newActiveId || ''
+    };
+
+    await AsyncStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(accountsData));
+    console.log('✅ Account removed:', userId);
   }
 
   /**
-   * Switch to a different account
+   * Switch to a different account.
+   *
+   * `biometricVerified` only matters when the user has turned biometrics on
+   * for this account (the `biometric_<userId>` preference); otherwise it is
+   * ignored. The service owns the policy, the caller owns the prompt.
+   *
+   * @throws {MultiAccountError} `cooldown`, `account_not_found`,
+   *   `biometric_required`, `auth_failed` or `credentials_missing`.
    */
-  async switchAccount(
-    targetUserId: string,
-    biometricVerified: boolean = false
-  ): Promise<{ success: boolean; error?: string }> {
-    try {
-      // Check rate limiting
-      if (!(await this.canSwitch())) {
-        return { 
-          success: false, 
-          error: 'Please wait before switching accounts again' 
-        };
-      }
-
-      const accounts = await this.getAccounts();
-      const targetAccount = accounts.find((acc: any) => acc.userId === targetUserId);
-
-      if (!targetAccount) {
-        return { success: false, error: 'Account not found' };
-      }
-
-      // Biometric check (if required and not already verified)
-      if (!biometricVerified) {
-        // Biometric verification will be handled by caller
-        return { success: false, error: 'biometric_required' };
-      }
-
-      const previousActiveId = await this.getActiveAccountId();
-
-      // Sign out current user first
-      await authService.signOut();
-
-      // Try to switch using encrypted password if available
-      if (targetAccount.encryptedPassword) {
-        try {
-          // Decrypt password
-          const decryptedPassword = await this.decryptToken(targetAccount.encryptedPassword);
-          
-          // Sign in with password
-          await signInWithEmailAndPassword(auth, targetAccount.email, decryptedPassword);
-          console.log('✅ Signed in with password for:', targetAccount.username);
-        } catch (error: any) {
-          console.error('❌ Password sign-in failed:', error);
-          return { 
-            success: false, 
-            error: 'Authentication failed. Please login again with this account.' 
-          };
-        }
-      } else if (targetAccount.encryptedToken) {
-        // Fallback: Try using refresh token
-        console.log('⚠️ No password available, attempting token refresh...');
-        try {
-          const token = await this.decryptToken(targetAccount.encryptedToken);
-          // Note: Firebase Web SDK doesn't support direct token sign-in
-          // User will need to re-login this account
-          return {
-            success: false,
-            error: 'Please login again with this account to enable switching.'
-          };
-        } catch (error) {
-          return {
-            success: false,
-            error: 'No stored credentials. Please login again.'
-          };
-        }
-      } else {
-        return {
-          success: false,
-          error: 'No stored credentials. Please login again with this account.'
-        };
-      }
-
-      // Update active account and lastActive time
-      const accountsData: AccountsData = {
-        accounts: accounts.map((acc: any) => 
-          acc.userId === targetUserId 
-            ? { ...acc, lastActive: Date.now() }
-            : acc
-        ),
-        activeAccountId: targetUserId
-      };
-
-      await AsyncStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(accountsData));
-      await AsyncStorage.setItem(STORAGE_KEYS.LAST_SWITCH, Date.now().toString());
-
-      // Handle storage switch (clear old cache, load new cache)
-      if (previousActiveId && previousActiveId !== targetUserId) {
-        await storageService.handleAccountSwitch(previousActiveId, targetUserId);
-      }
-
-      console.log('✅ Switched to account:', targetAccount.username);
-      return { success: true };
-
-    } catch (error: any) {
-      console.error('❌ Failed to switch account:', error);
-      return { 
-        success: false, 
-        error: error.message || 'Failed to switch account' 
-      };
+  async switchAccount(targetUserId: string, biometricVerified = false): Promise<void> {
+    // Check rate limiting
+    if (!(await this.canSwitch())) {
+      throw new MultiAccountError('cooldown', 'Please wait before switching accounts again');
     }
+
+    const accounts = await this.getAccounts();
+    const targetAccount = accounts.find((acc: any) => acc.userId === targetUserId);
+
+    if (!targetAccount) {
+      throw new MultiAccountError('account_not_found', 'Account not found');
+    }
+
+    // Biometric gate, armed only when the user opted in for this account.
+    const biometricRequired =
+      (await AsyncStorage.getItem(biometricPreferenceKey(targetUserId))) === 'true';
+    if (biometricRequired && !biometricVerified) {
+      throw new MultiAccountError('biometric_required', 'biometric_required');
+    }
+
+    const previousActiveId = await this.getActiveAccountId();
+
+    // Sign out current user first
+    await authService.signOut();
+
+    // Try to switch using encrypted password if available
+    if (targetAccount.encryptedPassword) {
+      let decryptedPassword: string;
+      try {
+        decryptedPassword = await this.decryptToken(targetAccount.encryptedPassword);
+      } catch (error: any) {
+        throw new MultiAccountError(
+          'auth_failed',
+          'Authentication failed. Please login again with this account.'
+        );
+      }
+
+      await signInWithEmailAndPassword(auth, targetAccount.email, decryptedPassword);
+      console.log('✅ Signed in with password for:', targetAccount.username);
+    } else if (targetAccount.encryptedToken) {
+      // Firebase Web SDK has no direct token sign-in, so a decryptable refresh
+      // token still isn't enough - the account has to be signed in again.
+      try {
+        await this.decryptToken(targetAccount.encryptedToken);
+      } catch (error) {
+        throw new MultiAccountError(
+          'credentials_missing',
+          'No stored credentials. Please login again.'
+        );
+      }
+      throw new MultiAccountError(
+        'credentials_missing',
+        'Please login again with this account to enable switching.'
+      );
+    } else {
+      throw new MultiAccountError(
+        'credentials_missing',
+        'No stored credentials. Please login again with this account.'
+      );
+    }
+
+    // Update active account and lastActive time
+    const accountsData: AccountsData = {
+      accounts: accounts.map((acc: any) =>
+        acc.userId === targetUserId
+          ? { ...acc, lastActive: Date.now() }
+          : acc
+      ),
+      activeAccountId: targetUserId
+    };
+
+    await AsyncStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(accountsData));
+    await AsyncStorage.setItem(STORAGE_KEYS.LAST_SWITCH, Date.now().toString());
+
+    // Handle storage switch (clear old cache, load new cache)
+    if (previousActiveId && previousActiveId !== targetUserId) {
+      await storageService.handleAccountSwitch(previousActiveId, targetUserId);
+    }
+
+    console.log('✅ Switched to account:', targetAccount.username);
   }
 
   /**
@@ -473,28 +483,24 @@ class MultiAccountService {
   }
 
   /**
-   * Update account info (avatar, username, etc.)
+   * Update account info (avatar, username, etc.).
+   *
+   * A no-op for an unknown userId; storage failures propagate.
    */
-  async updateAccountInfo(userId: string, updates: Partial<StoredAccount>): Promise<boolean> {
-    try {
-      const accounts = await this.getAccounts();
-      const activeId = await this.getActiveAccountId();
+  async updateAccountInfo(userId: string, updates: Partial<StoredAccount>): Promise<void> {
+    const accounts = await this.getAccounts();
+    const activeId = await this.getActiveAccountId();
 
-      const updatedAccounts = accounts.map((acc: any) =>
-        acc.userId === userId ? { ...acc, ...updates } : acc
-      );
+    const updatedAccounts = accounts.map((acc: any) =>
+      acc.userId === userId ? { ...acc, ...updates } : acc
+    );
 
-      const accountsData: AccountsData = {
-        accounts: updatedAccounts,
-        activeAccountId: activeId || ''
-      };
+    const accountsData: AccountsData = {
+      accounts: updatedAccounts,
+      activeAccountId: activeId || ''
+    };
 
-      await AsyncStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(accountsData));
-      return true;
-    } catch (error) {
-      console.error('Failed to update account info:', error);
-      return false;
-    }
+    await AsyncStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(accountsData));
   }
 }
 

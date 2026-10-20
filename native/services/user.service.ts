@@ -1108,68 +1108,6 @@ export class UserService {
   }
 
   /**
-   * Validate username
-   */
-  async validateUsername(username: string, currentUserId?: string): Promise<{ valid: boolean; error?: string }> {
-    // Check length (3-12 characters)
-    if (username.length < 3 || username.length > 12) {
-      return { valid: false, error: 'Username must be between 3 and 12 characters' };
-    }
-
-    // Must contain at least one alphabet
-    if (!/[a-zA-Z]/.test(username)) {
-      return { valid: false, error: 'Username must contain at least one letter' };
-    }
-
-    // Check allowed characters: alphanumeric, underscore, period only
-    const validPattern = /^[a-zA-Z0-9_.]+$/;
-    if (!validPattern.test(username)) {
-      return { valid: false, error: 'Username can only contain letters, numbers, underscore (_), and period (.)' };
-    }
-
-    // Check if starts or ends with special characters
-    if (username.startsWith('_') || username.startsWith('.') || username.endsWith('_') || username.endsWith('.')) {
-      return { valid: false, error: 'Username cannot start or end with special characters' };
-    }
-
-    // Check for consecutive special characters
-    if (/[_.]{2,}/.test(username)) {
-      return { valid: false, error: 'Username cannot have consecutive special characters' };
-    }
-
-    // If multiple special chars, must be different types (can't use only _ or only .)
-    const hasUnderscores = username.includes('_');
-    const hasDots = username.includes('.');
-    const specialCharCount = (username.match(/[_.]/g) || []).length;
-    
-    if (specialCharCount > 1 && (hasUnderscores && !hasDots)) {
-      return { valid: false, error: 'Cannot use only underscores as special characters' };
-    }
-    
-    if (specialCharCount > 1 && (hasDots && !hasUnderscores)) {
-      return { valid: false, error: 'Cannot use only dots as special characters' };
-    }
-
-    // Check if username already exists (case-insensitive)
-    const usernameQuery = query(
-      collection(db, 'users'),
-      where('usernameLowercase', '==', username.toLowerCase())
-    );
-    const existingUser = await getDocs(usernameQuery);
-    
-    // If editing current user's username, allow if it's the same user
-    if (!existingUser.empty) {
-      const existingUserId = existingUser.docs[0].id;
-      if (currentUserId && existingUserId === currentUserId) {
-        return { valid: true };
-      }
-      return { valid: false, error: 'Username is already taken' };
-    }
-
-    return { valid: true };
-  }
-
-  /**
    * Check if user is following another user
    */
   async isFollowing(userId: string, targetUserId: string): Promise<boolean> {
