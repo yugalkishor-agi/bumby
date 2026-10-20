@@ -879,7 +879,13 @@ export default function GlimpseCreateScreen() {
         />
         {overlayLayers.map((layer: any) => (
           <View key={layer.id} style={[styles.editorOverlayAsset, { left: Number(layer.x || 0), top: Number(layer.y || 0), width: Number(layer.width || 120), height: Number(layer.height || 120), transform: [{ rotate: `${Number(layer.rotation || 0)}deg` }] }]} pointerEvents="none">
-            <Image source={{ uri: layer.assetUri }} style={styles.editorOverlayAssetImage} contentFit="cover" />
+            {layer.assetUri ? (
+              <Image source={{ uri: layer.assetUri }} style={styles.editorOverlayAssetImage} contentFit="cover" />
+            ) : layer.content ? (
+              <View style={styles.editorOverlaySticker}>
+                <Text style={styles.editorOverlayStickerText}>{layer.content}</Text>
+              </View>
+            ) : null}
           </View>
         ))}
         {overlayText ? (
@@ -1253,7 +1259,6 @@ export default function GlimpseCreateScreen() {
         visible={editorVisible}
         mediaUri={selectedMedia.uri}
         mediaType={selectedMedia.type}
-        // @ts-ignore
         initialMeta={selectedMedia.editorMeta}
         currentSong={selectedSong ? { title: selectedSong.title, artist: selectedSong.artist, duration: selectedSong.duration, clipStart: songClipStart, clipEnd: songClipEnd, streamUrl: selectedSong.streamUrl } : null}
         onClose={() => setEditorVisible(false)}
@@ -1357,6 +1362,13 @@ const styles = StyleSheet.create({
   mediaStyleOverlay: { ...StyleSheet.absoluteFillObject },
   editorOverlayAsset: { position: 'absolute', borderRadius: 16, overflow: 'hidden' },
   editorOverlayAssetImage: { width: '100%', height: '100%' },
+  editorOverlaySticker: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  editorOverlayStickerText: { fontSize: 64, textAlign: 'center' },
   editorOverlayTextWrap: { position: 'absolute', left: 22, right: 22 },
   editorOverlayTop: { top: 74 },
   editorOverlayCenter: { top: '42%' },

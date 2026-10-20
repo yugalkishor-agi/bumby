@@ -110,10 +110,11 @@ export function GlimpseStageTextLayer({
     onMoveShouldSetPanResponder: (_, gestureState) => !editable && (gestureState.numberActiveTouches > 1 || Math.abs(gestureState.dx) > 2 || Math.abs(gestureState.dy) > 2),
     onMoveShouldSetPanResponderCapture: (_, gestureState) => !editable && (gestureState.numberActiveTouches > 1 || Math.abs(gestureState.dx) > 2 || Math.abs(gestureState.dy) > 2),
     onPanResponderGrant: (event) => {
-      dragStartRef.current = { x: draftRef.current.x, y: draftRef.current.y };
+      dragStartRef.current = { x: draftRef.current.x ?? 0, y: draftRef.current.y ?? 0 };
       scaleStartRef.current = draftRef.current.scale;
-      pinchStartDistanceRef.current = getTouchDistance(event.nativeEvent.touches);
-      interactionModeRef.current = event.nativeEvent.touches.length >= 2 ? 'pinch' : 'drag';
+      const grantTouches = event?.nativeEvent?.touches ?? [];
+      pinchStartDistanceRef.current = getTouchDistance(grantTouches);
+      interactionModeRef.current = grantTouches.length >= 2 ? 'pinch' : 'drag';
       onSelect();
     },
     onPanResponderMove: (event, gestureState) => {
@@ -183,10 +184,10 @@ export function GlimpseStageAssetLayer({
   onUpdate,
 }: GlimpseStageAssetLayerProps) {
   const interactionModeRef = useRef<'drag' | 'pinch' | null>(null);
-  const dragStartRef = useRef({ x: layer.x, y: layer.y });
-  const resizeStartRef = useRef({ width: layer.width, height: layer.height });
+  const dragStartRef = useRef({ x: layer.x ?? 18, y: layer.y ?? 18 });
+  const resizeStartRef = useRef({ width: layer.width ?? 120, height: layer.height ?? 120 });
   const pinchStartDistanceRef = useRef(0);
-  const [draft, setDraft] = useState({ x: layer.x, y: layer.y, width: layer.width, height: layer.height, rotation: layer.rotation || 0 });
+  const [draft, setDraft] = useState({ x: layer.x ?? 18, y: layer.y ?? 18, width: layer.width ?? 120, height: layer.height ?? 120, rotation: layer.rotation || 0 });
   const draftRef = useRef(draft);
 
   const syncDraft = (updates: Partial<typeof draft>) => {
@@ -197,7 +198,7 @@ export function GlimpseStageAssetLayer({
 
   useEffect(() => {
     if (interactionModeRef.current) return;
-    const next = { x: layer.x, y: layer.y, width: layer.width, height: layer.height, rotation: layer.rotation || 0 };
+    const next = { x: layer.x ?? 18, y: layer.y ?? 18, width: layer.width ?? 120, height: layer.height ?? 120, rotation: layer.rotation || 0 };
     draftRef.current = next;
     setDraft(next);
   }, [layer.height, layer.rotation, layer.width, layer.x, layer.y]);
@@ -228,10 +229,11 @@ export function GlimpseStageAssetLayer({
     onMoveShouldSetPanResponder: (_, gestureState) => gestureState.numberActiveTouches > 1 || Math.abs(gestureState.dx) > 2 || Math.abs(gestureState.dy) > 2,
     onMoveShouldSetPanResponderCapture: (_, gestureState) => gestureState.numberActiveTouches > 1 || Math.abs(gestureState.dx) > 2 || Math.abs(gestureState.dy) > 2,
     onPanResponderGrant: (event) => {
-      dragStartRef.current = { x: draftRef.current.x, y: draftRef.current.y };
-      resizeStartRef.current = { width: draftRef.current.width, height: draftRef.current.height };
-      pinchStartDistanceRef.current = getTouchDistance(event.nativeEvent.touches);
-      interactionModeRef.current = event.nativeEvent.touches.length >= 2 ? 'pinch' : 'drag';
+      dragStartRef.current = { x: draftRef.current.x ?? 18, y: draftRef.current.y ?? 18 };
+      resizeStartRef.current = { width: draftRef.current.width ?? 120, height: draftRef.current.height ?? 120 };
+      const grantTouches = event?.nativeEvent?.touches ?? [];
+      pinchStartDistanceRef.current = getTouchDistance(grantTouches);
+      interactionModeRef.current = grantTouches.length >= 2 ? 'pinch' : 'drag';
       onSelect(layer.id);
     },
     onPanResponderMove: (event, gestureState) => {
@@ -289,12 +291,12 @@ export function GlimpseStageAssetLayer({
       pointerEvents="box-none"
     >
       <View {...surfaceResponder.panHandlers} style={[styles.assetSurface, selected && styles.layerSelected]}>
-        {layer.kind === 'sticker' || layer.sticker ? (
+        {layer.assetUri ? (
+          <Image source={{ uri: layer.assetUri }} style={styles.assetImage} contentFit="cover" />
+        ) : layer.content ? (
           <View style={styles.stickerSurface}>
-            <Text style={styles.stickerText}>{layer.sticker || '?'}</Text>
+            <Text style={styles.stickerText}>{layer.content}</Text>
           </View>
-        ) : layer.uri ? (
-          <Image source={{ uri: layer.uri }} style={styles.assetImage} contentFit="cover" />
         ) : null}
       </View>
       {selected ? <View pointerEvents="none" style={styles.selectionOutline} /> : null}

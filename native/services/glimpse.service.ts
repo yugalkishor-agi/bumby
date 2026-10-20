@@ -25,6 +25,7 @@ import type { Story } from '../types/database';
 import { likeService, type LikeLookupItem } from './like.service';
 import { cacheIntegration } from './cacheIntegration.service';
 import { imageCacheService } from './imageCache.service';
+import { normalizeOverlayLayers } from '../utils/glimpse/glimpseEditorUtils';
 
 function extractTaggedUserIds(taggedUsers?: Array<{ userId?: string; username?: string }>) {
   const ids = (taggedUsers || [])
@@ -54,26 +55,6 @@ function sanitizeVoiceSegments(segments?: Array<{ id?: string; uri?: string; sta
         durationMs: Math.max(0, Math.round(Number(segment!.durationMs || 0))),
       };
       if (segment?.label) clean.label = String(segment.label);
-      return clean;
-    });
-}
-
-function sanitizeOverlayLayers(layers?: Array<{ id?: string; uri?: string; kind?: string; sticker?: string; x?: number; y?: number; width?: number; height?: number; rotation?: number }>) {
-  if (!Array.isArray(layers)) return [];
-  return layers
-    .filter((layer) => !!layer?.id)
-    .map((layer) => {
-      const clean: any = {
-        id: String(layer!.id),
-        x: Math.round(Number(layer!.x || 0)),
-        y: Math.round(Number(layer!.y || 0)),
-        width: Math.max(1, Math.round(Number(layer!.width || 0))),
-        height: Math.max(1, Math.round(Number(layer!.height || 0))),
-        rotation: Math.round(Number(layer!.rotation || 0)),
-      };
-      if (layer?.kind) clean.kind = layer.kind;
-      if (layer?.uri) clean.uri = String((layer as any).assetUri);
-      if (layer?.sticker) clean.sticker = String((layer as any).content);
       return clean;
     });
 }
@@ -125,7 +106,7 @@ function sanitizeEditorMeta(meta?: {
   const voiceSegments = sanitizeVoiceSegments(meta.voiceSegments);
   if (voiceSegments.length) clean.voiceSegments = voiceSegments;
 
-  const overlayLayers = sanitizeOverlayLayers(meta.overlayLayers);
+  const overlayLayers = normalizeOverlayLayers(meta.overlayLayers);
   if (overlayLayers.length) clean.overlayLayers = overlayLayers;
 
   return Object.keys(clean).length ? clean : null;

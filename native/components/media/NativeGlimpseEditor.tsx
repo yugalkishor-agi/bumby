@@ -20,6 +20,7 @@ import { GlimpseMusicPanel } from '../glimpse/GlimpseMusicPanel';
 import { GlimpseTextComposer } from '../glimpse/GlimpseTextComposer';
 import { GLIMPSE_STYLE_PRESETS, cycleAlign, clamp } from '../../utils/glimpse/glimpseEditorCalculations';
 import { TOOLS } from '../../utils/glimpse/glimpseEditorConstants';
+import type { GlimpseEditorMeta } from '../../utils/glimpseEditor';
 
 interface CurrentSong {
   title: string;
@@ -34,6 +35,8 @@ export interface NativeGlimpseEditorProps {
   visible: boolean;
   mediaUri: string;
   mediaType: 'image' | 'video';
+  /** Saved edits for the current item; applied every time the editor opens. */
+  initialMeta?: GlimpseEditorMeta | null;
   currentSong?: CurrentSong | null;
   onClose: () => void;
   onSave: (data: any) => void;
@@ -47,6 +50,7 @@ export function NativeGlimpseEditor({
   visible,
   mediaUri,
   mediaType,
+  initialMeta,
   currentSong,
   onClose,
   onSave,
@@ -67,6 +71,7 @@ export function NativeGlimpseEditor({
     layers: { overlayLayers, setOverlayLayers, selectedOverlayId, setSelectedOverlayId, selectedCanvasLayer, setSelectedCanvasLayer },
     canvas: { canvasFrame, setStageWindowOffset, stageWindowOffset, animationTick, setAnimationTick },
     music: { musicPreviewing, musicPreviewLoading, musicClipStart, setMusicClipStart, musicClipEnd, setMusicClipEnd },
+    hydrateFromMeta,
   } = state;
 
   useEffect(() => {
@@ -91,6 +96,14 @@ export function NativeGlimpseEditor({
     return () => cancelAnimationFrame(af);
   }, [setAnimationTick]);
 
+  // The editor stays mounted between opens, so restore the saved edits on
+  // every open instead of relying on initial state. Without this, opening an
+  // already-edited item started blank and the next save wiped the preview.
+  useEffect(() => {
+    if (!visible) return;
+    hydrateFromMeta(initialMeta);
+  }, [visible, initialMeta, hydrateFromMeta]);
+
   const effectiveTrimEnd = mediaType === 'image' ? 0 : Math.min(trimEnd, durationMillis);
 
   const { canUndo, canRedo, undo: handleUndo, redo: handleRedo, commitSnapshot: commitHistorySnapshot } = useGlimpseHistory({
@@ -100,7 +113,7 @@ export function NativeGlimpseEditor({
   });
 
   const { handlePlaybackStatusUpdate, togglePlayback, toggleMuted, handleVolumeChange } = useGlimpsePlayback({
-    mediaType, videoRef, durationMillis, setDurationMillis, trimStart, effectiveTrimEnd, setTrimEnd, currentPosition, setCurrentPosition, isPlaying, setIsPlaying, muted, setMuted, internalVolume, setInternalVolume, isRecording, setVoiceInsertAt, updateTimelineWindow: () => {}, setVideoLoaded, setVideoError,
+    mediaType, videoRef, durationMillis, setDurationMillis, trimStart, trimEnd, effectiveTrimEnd, setTrimEnd, currentPosition, setCurrentPosition, isPlaying, setIsPlaying, muted, setMuted, internalVolume, setInternalVolume, isRecording, setVoiceInsertAt, updateTimelineWindow: () => {}, setVideoLoaded, setVideoError,
   });
 
   const { seekPreviewPosition, updateTimelineWindow, scrubResponder, trimStartResponder, trimEndResponder, splitResponder, voiceResponder, handleDeleteLeftSplit, handleDeleteRightSplit } = useGlimpseTimeline({
@@ -129,7 +142,7 @@ export function NativeGlimpseEditor({
 
   const handleSaveAction = useCallback(() => {
     onSave({
-      styleId, overlayText: overlayText.trim(), overlayPosition: 'center', overlayAlign, overlayColor, overlayBackground, overlayFont, overlayEffect, overlayAnimation,
+      styleId, overlayText: overlayText.trim(), overlayPosition: initialMeta?.overlayPosition ?? 'center', overlayAlign, overlayColor, overlayBackground, overlayFont, overlayEffect, overlayAnimation,
       splitAt: mediaType === 'video' ? Math.round(splitAt) : undefined,
       overlayOffsetX: Math.round(textOffset.x), overlayOffsetY: Math.round(textOffset.y), overlayScale: Number(textScale.toFixed(2)), overlayRotation: Math.round(textRotation),
       trimStart: mediaType === 'video' ? Math.round(trimStart) : undefined,
@@ -138,7 +151,7 @@ export function NativeGlimpseEditor({
       voiceSegments: voiceSegments.length ? voiceSegments : undefined,
       overlayLayers: overlayLayers.length ? overlayLayers : undefined,
     });
-  }, [effectiveTrimEnd, internalVolume, mediaType, muted, onSave, overlayAlign, overlayAnimation, overlayBackground, overlayColor, overlayEffect, overlayFont, overlayLayers, overlayText, splitAt, styleId, textOffset.x, textOffset.y, textRotation, textScale, trimStart, voiceSegments]);
+  }, [effectiveTrimEnd, initialMeta, internalVolume, mediaType, muted, onSave, overlayAlign, overlayAnimation, overlayBackground, overlayColor, overlayEffect, overlayFont, overlayLayers, overlayText, splitAt, styleId, textOffset.x, textOffset.y, textRotation, textScale, trimStart, voiceSegments]);
 
   const panelResponder = useMemo(() => PanResponder.create({
     onStartShouldSetPanResponder: () => true,

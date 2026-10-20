@@ -103,6 +103,8 @@ interface ChatScreenState {
   } | null)) => void;
   editedMeta: Record<string, { original: string }>;
   setEditedMeta: (val: Record<string, { original: string }> | ((prev: Record<string, { original: string }>) => Record<string, { original: string }>)) => void;
+  /** Wipes every per-conversation field so opening another chat starts clean. */
+  resetForConversation: () => void;
   editingReactionIndex: number | null;
   setEditingReactionIndex: (val: number | null | ((prev: number | null) => number | null)) => void;
   editingPreview: string | null;
@@ -171,7 +173,7 @@ export const useChatScreenStore = create<ChatScreenState>((set) => ({
   setMoreReactionsVisible: (val) => set((state) => ({ moreReactionsVisible: typeof val === 'function' ? (val as any)(state.moreReactionsVisible) : val })),
   activeActionMessage: null,
   setActiveActionMessage: (val) => set((state) => ({ activeActionMessage: typeof val === 'function' ? (val as any)(state.activeActionMessage) : val })),
-  reactionViewer: null,
+  reactionViewer: { visible: false, messageId: null },
   setReactionViewer: (val) => set((state) => ({ reactionViewer: typeof val === 'function' ? (val as any)(state.reactionViewer) : val })),
   reactionUsersById: {},
   setReactionUsersById: (val) => set((state) => ({ reactionUsersById: typeof val === 'function' ? (val as any)(state.reactionUsersById) : val })),
@@ -179,7 +181,7 @@ export const useChatScreenStore = create<ChatScreenState>((set) => ({
   setSeenUsersById: (val) => set((state) => ({ seenUsersById: typeof val === 'function' ? (val as any)(state.seenUsersById) : val })),
   actionMenuAnchor: null,
   setActionMenuAnchor: (val) => set((state) => ({ actionMenuAnchor: typeof val === 'function' ? (val as any)(state.actionMenuAnchor) : val })),
-  pinned: null,
+  pinned: { ids: [] },
   setPinned: (val) => set((state) => ({ pinned: typeof val === 'function' ? (val as any)(state.pinned) : val })),
   pinnedCursor: 0,
   setPinnedCursor: (val) => set((state) => ({ pinnedCursor: typeof val === 'function' ? (val as any)(state.pinnedCursor) : val })),
@@ -191,7 +193,7 @@ export const useChatScreenStore = create<ChatScreenState>((set) => ({
   setEditingId: (val) => set((state) => ({ editingId: typeof val === 'function' ? (val as any)(state.editingId) : val })),
   stickerPickerVisible: false,
   setStickerPickerVisible: (val) => set((state) => ({ stickerPickerVisible: typeof val === 'function' ? (val as any)(state.stickerPickerVisible) : val })),
-  stickerPickerTab: null,
+  stickerPickerTab: 'gif',
   setStickerPickerTab: (val) => set((state) => ({ stickerPickerTab: typeof val === 'function' ? (val as any)(state.stickerPickerTab) : val })),
   forwardModalVisible: false,
   setForwardModalVisible: (val) => set((state) => ({ forwardModalVisible: typeof val === 'function' ? (val as any)(state.forwardModalVisible) : val })),
@@ -213,4 +215,52 @@ export const useChatScreenStore = create<ChatScreenState>((set) => ({
   setShowScrollToBottom: (val) => set((state) => ({ showScrollToBottom: typeof val === 'function' ? (val as any)(state.showScrollToBottom) : val })),
   hasInitialScrolled: false,
   setHasInitialScrolled: (val) => set((state) => ({ hasInitialScrolled: typeof val === 'function' ? (val as any)(state.hasInitialScrolled) : val })),
+  resetForConversation: () =>
+    set({
+      messageText: '',
+      sending: false,
+      otherUser: null,
+      groupMeta: {
+        name: null,
+        avatarURL: null,
+        description: null,
+        participantIds: null,
+      },
+      otherUserPrivacy: null,
+      conversationNickname: '',
+      loadingUser: false,
+      canMessage: true,
+      requestMode: false,
+      removedGroupMeta: null,
+      removedByUser: null,
+      replyingTo: null,
+      otherUserTyping: false,
+      visibleMessageIds: new Set<string>(),
+      actionsVisible: false,
+      shareSheetVisible: false,
+      galleryComposerVisible: false,
+      pollComposerVisible: false,
+      locationSheetVisible: false,
+      moreReactionsVisible: false,
+      activeActionMessage: null,
+      reactionViewer: { visible: false, messageId: null },
+      reactionUsersById: {},
+      seenUsersById: {},
+      actionMenuAnchor: null,
+      pinned: { ids: [] },
+      pinnedCursor: 0,
+      hiddenIds: new Set<string>(),
+      textOverrides: {},
+      editingId: null,
+      stickerPickerVisible: false,
+      stickerPickerTab: 'gif',
+      forwardModalVisible: false,
+      forwardPayload: null,
+      editedMeta: {},
+      editingReactionIndex: null,
+      editingPreview: null,
+      replyPreviewExpanded: false,
+      showScrollToBottom: false,
+      hasInitialScrolled: false,
+    }),
 }));

@@ -2,13 +2,15 @@
 // Purpose: Type definitions for Glimpse editor
 // Extracted from: NativeGlimpseEditor.tsx + glimpseEditor.ts
 
+import type { GlimpseOverlayLayer } from '../glimpseEditor';
+
 export type EditorTool = 'text' | 'effects' | 'voice' | 'clips' | 'overlay' | 'music' | 'download';
 export type TextComposerTool = 'font' | 'color' | 'animation' | 'effect' | 'background';
 
 export type GlimpseOverlayAlign = 'left' | 'center' | 'right';
 export type GlimpseOverlayAnimation = 'none' | 'fadeScale' | 'slideUp' | 'typewriter' | 'bounce';
 export type GlimpseOverlayEffect = 'clean' | 'outline' | 'shadow' | 'glow';
-export type GlimpseOverlayBackground = 'none' | 'black' | 'white';
+export type GlimpseOverlayBackground = 'none' | 'black' | 'white' | 'glass';
 
 export interface GlimpseVoiceSegment {
   id: string;
@@ -16,21 +18,6 @@ export interface GlimpseVoiceSegment {
   startMs: number;
   durationMs: number;
   label?: string;
-}
-
-export interface GlimpseOverlayLayer {
-  id: string;
-  type: 'text' | 'sticker' | 'asset';
-  content: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  rotation: number;
-  scale: number;
-  color?: string;
-  font?: string;
-  assetUri?: string;
 }
 
 export interface EditorHistorySnapshot {
@@ -55,3 +42,4 @@ export interface EditorHistorySnapshot {
 }
 
 export type { GlimpseStylePreset } from '../glimpseEditor';
+export type { GlimpseOverlayLayer };

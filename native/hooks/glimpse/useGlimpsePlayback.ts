@@ -8,6 +8,7 @@ interface UseGlimpsePlaybackProps {
   durationMillis: number;
   setDurationMillis: (val: number) => void;
   trimStart: number;
+  trimEnd: number;
   effectiveTrimEnd: number;
   setTrimEnd: (val: number) => void;
   currentPosition: number;
@@ -31,6 +32,7 @@ export function useGlimpsePlayback({
   durationMillis,
   setDurationMillis,
   trimStart,
+  trimEnd,
   effectiveTrimEnd,
   setTrimEnd,
   currentPosition,
@@ -59,7 +61,9 @@ export function useGlimpsePlayback({
     setVideoError(null);
     if (status.durationMillis && status.durationMillis !== durationMillis) {
       setDurationMillis(status.durationMillis);
-      setTrimEnd(Math.min(status.durationMillis, 15000));
+      // Clamp to the real duration rather than overwriting it: hydration seeds
+      // trimEnd from saved meta on open, and this callback fires afterwards.
+      setTrimEnd(Math.min(trimEnd || status.durationMillis, status.durationMillis));
       updateTimelineWindow();
     }
     if (typeof status.positionMillis === 'number') {
@@ -71,7 +75,7 @@ export function useGlimpsePlayback({
     if (status.isPlaying && typeof status.positionMillis === 'number' && effectiveTrimEnd > 0 && status.positionMillis >= effectiveTrimEnd - 70) {
       try { await videoRef.current?.playFromPositionAsync(trimStart); } catch {}
     }
-  }, [durationMillis, effectiveTrimEnd, isRecording, setCurrentPosition, setDurationMillis, setTrimEnd, setVideoError, setVideoLoaded, setVoiceInsertAt, trimStart, updateTimelineWindow, videoRef]);
+  }, [durationMillis, effectiveTrimEnd, isRecording, setCurrentPosition, setDurationMillis, setTrimEnd, setVideoError, setVideoLoaded, setVoiceInsertAt, trimEnd, trimStart, updateTimelineWindow, videoRef]);
 
   const togglePlayback = useCallback(async () => {
     if (playbackToggleBusyRef.current) return;

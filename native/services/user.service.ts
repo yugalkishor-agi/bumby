@@ -15,6 +15,7 @@ import {
   writeBatch,
   runTransaction,
   Timestamp,
+  deleteField,
   documentId,
   startAfter,
 } from 'firebase/firestore';
@@ -262,8 +263,17 @@ export class UserService {
   async updateUser(userId: string, updates: Partial<User>): Promise<void> {
     const userRef = doc(db, 'users', userId);
 
+    // Firestore rejects `undefined` as a field value, so a caller clearing a
+    // field (e.g. removing the profile photo passes `{ avatarURL: undefined }`)
+    // would throw "Unsupported field value: undefined". Translate cleared
+    // fields into explicit deletions instead.
+    const sanitized: Record<string, unknown> = {};
+    Object.entries(updates).forEach(([key, value]) => {
+      sanitized[key] = value === undefined ? deleteField() : value;
+    });
+
     await updateDoc(userRef, {
-      ...updates,
+      ...sanitized,
       updatedAt: serverTimestamp(),
     });
 
@@ -284,9 +294,10 @@ export class UserService {
       console.warn('Failed to refresh user cache after update:', cacheError);
     }
 
-    // If avatar is being updated, update all posts and stories
-    if (updates.avatarURL !== undefined) {
-      await this.updateUserContentAvatar(userId, updates.avatarURL);
+    // If the avatar changed (set OR removed), update all posts and stories.
+    // A removal arrives as `undefined`, which becomes '' on the denormalized copies.
+    if ('avatarURL' in updates) {
+      await this.updateUserContentAvatar(userId, updates.avatarURL ?? '');
     }
   }
 
@@ -324,21 +335,12 @@ export class UserService {
         total += storiesSnapshot.size;
       }
 
-      const commentsRef = collection(db, 'comments');
-      const commentsQuery = query(commentsRef, where('authorId', '==', userId));
-      const commentsSnapshot = await getDocs(commentsQuery);
-      if (!commentsSnapshot.empty) {
-        try {
-          const batchComments = writeBatch(db);
-          commentsSnapshot.docs.forEach((commentDoc) => {
-            batchComments.update(commentDoc.ref, { authorAvatarURL: newAvatarURL });
-          });
-          await batchComments.commit();
-          total += commentsSnapshot.size;
-        } catch (e) {
-          console.error('Failed to update avatar in comments:', e);
-        }
-      }
+      // NOTE: Top-level /comments collection uses canReadTarget() rules that
+      // require a per-doc get() on the parent, which Firestore blocks for
+      // collection-level list queries. Post comments live in
+      // /posts/{postId}/comments/ (subcollection) and are not denormalized
+      // with authorAvatarURL in a way that needs bulk-updating here, so we
+      // intentionally skip this step.
 
       if (total > 0) {
         console.log(`Updated avatar in ${total} content items`);

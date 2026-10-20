@@ -1692,7 +1692,13 @@ const handleComment = () => {
             ]}
             pointerEvents="none"
           >
-            <Image source={{ uri: layer.assetUri }} style={styles.editorOverlayAssetImage} contentFit="cover" />
+            {layer.assetUri ? (
+              <Image source={{ uri: layer.assetUri }} style={styles.editorOverlayAssetImage} contentFit="cover" />
+            ) : layer.content ? (
+              <View style={styles.editorOverlaySticker}>
+                <Text style={styles.editorOverlayStickerText}>{layer.content}</Text>
+              </View>
+            ) : null}
           </View>
         ))}
 

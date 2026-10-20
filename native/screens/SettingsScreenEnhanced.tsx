@@ -524,6 +524,18 @@ export default function SettingsScreenEnhanced() {
         },
       ],
     },
+    {
+      // Temp section - remove once log capture graduates to a proper screen.
+      title: 'Temp',
+      items: [
+        {
+          label: 'Logs',
+          icon: 'document-text-outline',
+          description: 'View, copy and share every app log in one tap',
+          route: 'Logs',
+        },
+      ],
+    },
   ];
 
   const renderSettingItem = (item: SettingItem, index: number, total: number) => {

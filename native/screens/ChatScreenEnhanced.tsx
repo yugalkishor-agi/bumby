@@ -89,6 +89,15 @@ export default function ChatScreen() {
 
   const conversationId = useChatScreenStore(s => s.conversationId);
     const setConversationId = useChatScreenStore(s => s.setConversationId);
+
+  // The chat store is a module-level singleton shared by every conversation.
+  // Wipe its per-conversation fields when this screen unmounts so the next
+  // chat opened never sees pinned/hidden/edited state from the previous one.
+  useEffect(() => {
+    return () => {
+      useChatScreenStore.getState().resetForConversation();
+    };
+  }, []);
   const { messages: chatMessages, loading, loadingMore, sendMessage: sendMsg, markAsRead, loadOlderMessages, connectionState: messagesConnectionState, pendingMessageCount } = useMessages(conversationId, {
     initialLimit: 24,
     pageSize: 24,

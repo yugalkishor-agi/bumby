@@ -63,6 +63,7 @@ const getGlimpsesScreen = () => require('./screens/GlimpsesScreen').default;
 const getHighlightsScreen = () => require('./screens/HighlightsScreen').default;
 const getViewersListScreen = () => require('./screens/ViewersListScreen').default;
 const getBackendDiagnosticsScreen = () => require('./screens/BackendDiagnosticsScreen').default;
+const getLogsScreen = () => require('./screens/LogsScreen').default;
 const getEditProfileScreen = () => require('./screens/EditProfileScreen').default;
 const getFollowersListScreen = () => require('./screens/FollowersListScreen').default;
 const getFollowingScreen = () => require('./screens/FollowingScreen').default;
@@ -551,6 +552,8 @@ function AppNavigator() {
           <Stack.Screen name="Notifications" getComponent={getNotificationsScreenEnhanced} />
           {/* Diagnostics (Dev) */}
           <Stack.Screen name="Diagnostics" getComponent={getBackendDiagnosticsScreen} />
+          {/* Logs (Temp) */}
+          <Stack.Screen name="Logs" getComponent={getLogsScreen} />
           {/* Settings */}
           <Stack.Screen name="Settings" getComponent={getSettingsScreenEnhanced} />
           <Stack.Screen name="PrivacySettings" getComponent={getPrivacySettingsScreen} />

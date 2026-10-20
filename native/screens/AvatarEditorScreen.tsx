@@ -28,6 +28,16 @@ export default function AvatarEditorScreen() {
 
   const pickImage = async (useCamera = false) => {
     try {
+      if (useCamera) {
+        // launchCameraAsync throws (or silently cancels) without camera
+        // permission - request it explicitly before opening the camera.
+        const permission = await ImagePicker.requestCameraPermissionsAsync();
+        if (!permission.granted) {
+          Alert.alert('Camera access needed', 'Allow camera access in your settings to take a profile photo.');
+          return;
+        }
+      }
+
       const result = useCamera
         ? await ImagePicker.launchCameraAsync({
             mediaTypes: ['images'],
@@ -79,7 +89,8 @@ export default function AvatarEditorScreen() {
       ]);
     } catch (error) {
       console.error('Failed to update avatar:', error);
-      Alert.alert('Error', 'Failed to update profile photo');
+      const message = error instanceof Error ? error.message : 'Failed to update profile photo';
+      Alert.alert('Upload failed', message);
     } finally {
       setUploading(false);
     }
@@ -99,13 +110,21 @@ export default function AvatarEditorScreen() {
           onPress: async () => {
             setUploading(true);
             try {
+              const previousAvatarURL = user.avatarURL;
+              // `undefined` clears the field on the user doc (updateUser
+              // translates it to an explicit Firestore field deletion).
               await userService.updateUser(user.userId, { avatarURL: undefined });
+              // Best-effort cleanup of the stored object so it does not orphan.
+              if (previousAvatarURL) {
+                await mediaService.deleteAvatar(previousAvatarURL);
+              }
               Alert.alert('Success', 'Profile photo removed successfully!', [
                 { text: 'OK', onPress: () => navigation.goBack() }
               ]);
             } catch (error) {
               console.error('Failed to remove avatar:', error);
-              Alert.alert('Error', 'Failed to remove profile photo');
+              const message = error instanceof Error ? error.message : 'Failed to remove profile photo';
+              Alert.alert('Remove failed', message);
             } finally {
               setUploading(false);
             }

@@ -12,16 +12,28 @@ export interface GlimpseVoiceSegment {
   label?: string;
 }
 
+/**
+ * The one overlay-layer shape, shared by the editor and by persisted
+ * GlimpseEditorMeta. `useGlimpseLayers` is the only writer, so its fields
+ * (type/content/assetUri) are the canonical ones — the older kind/uri/sticker
+ * shape only ever survives in already-written documents and is folded back in
+ * by `normalizeOverlayLayers`.
+ */
 export interface GlimpseOverlayLayer {
   id: string;
-  uri?: string;
-  kind?: 'image' | 'sticker';
-  sticker?: string;
+  type: 'text' | 'sticker' | 'asset';
+  /** Emoji/text for sticker and text layers. */
+  content: string;
   x: number;
   y: number;
   width: number;
   height: number;
-  rotation?: number;
+  rotation: number;
+  scale: number;
+  color?: string;
+  font?: string;
+  /** Image source for asset layers. */
+  assetUri?: string;
 }
 
 export interface GlimpseEditorMeta {
