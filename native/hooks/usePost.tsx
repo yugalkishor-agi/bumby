@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { postService } from '../services/post.service';
+import { collectionService } from '../services/collection.service';
 import { cacheService } from '../services/cache.service';
 import { cacheIntegration } from '../services/cacheIntegration.service';
 import type { Post } from '../types/database';
@@ -204,11 +205,11 @@ export const usePostActions = () => {
   };
   const savePost = async (postId: string) => {
     if (!user) throw new Error('Not authenticated');
-    await postService.savePost(postId, user.userId);
+    await collectionService.savePost(user.userId, postId);
   };
   const unsavePost = async (postId: string) => {
     if (!user) throw new Error('Not authenticated');
-    await postService.unsavePost(postId, user.userId);
+    await collectionService.unsavePostFromAllCollections(user.userId, postId);
   };
 
   return {
@@ -331,19 +332,9 @@ export const useComments = (postId: string, collectionType: 'posts' | 'glimpses'
   }, [collectionType, commentsCacheKey, postId, user?.userId]);
   const addComment = async (text: string, parentCommentId?: string) => {
     if (!user) throw new Error('Not authenticated');
-    const {
-      collection: firestoreCollection,
-      doc: firestoreDoc,
-      setDoc,
-      serverTimestamp,
-      increment: firestoreIncrement,
-      updateDoc,
-    } = await import('firebase/firestore');
-    const { db } = await import('../config/firebase');
-    const commentRef = firestoreDoc(firestoreCollection(db, collectionType, postId, 'comments'));
-    const commentId = commentRef.id;
+    const pendingId = `pending-${Date.now()}`;
     const optimisticComment: any = {
-      commentId,
+      commentId: pendingId,
       authorId: user.userId,
       authorUsername: user.username,
       authorAvatarURL: user.avatarURL || '',
@@ -356,27 +347,21 @@ export const useComments = (postId: string, collectionType: 'posts' | 'glimpses'
     };
     updateComments((prev) => [optimisticComment, ...prev]);
     try {
-      const commentData: any = {
-        commentId,
-        authorId: user.userId,
-        authorUsername: user.username,
-        authorAvatarURL: user.avatarURL || '',
+      const commentId = await postService.addComment(
+        postId,
+        user.userId,
+        user.username,
+        user.avatarURL || '',
         text,
-        createdAt: serverTimestamp(),
-        likesCount: 0,
-      };
-      if (parentCommentId) {
-        commentData.parentCommentId = parentCommentId;
-      }
-      await setDoc(commentRef, commentData);
-      const parentRef = firestoreDoc(db, collectionType, postId);
-      const updates: any = { 'stats.commentsCount': firestoreIncrement(1) };
-      if (collectionType === 'glimpses') {
-        updates.repliesCount = firestoreIncrement(1);
-      }
-      await updateDoc(parentRef, updates);
+        parentCommentId,
+        [],
+        collectionType
+      );
+      updateComments((prev) => prev.map((comment) =>
+        comment.commentId === pendingId ? { ...comment, commentId } : comment
+      ));
     } catch (error) {
-      updateComments((prev) => prev.filter((comment) => comment.commentId !== commentId));
+      updateComments((prev) => prev.filter((comment) => comment.commentId !== pendingId));
       throw error;
     }
   };

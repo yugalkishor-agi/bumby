@@ -151,7 +151,8 @@ export class CollectionService {
   async savePost(
     userId: string,
     postId: string,
-    collectionId?: string
+    collectionId?: string,
+    contentType: 'post' | 'glimpse' = 'post'
   ): Promise<void> {
     // If no collection specified, create/use default "All" collection
     if (!collectionId) {
@@ -182,6 +183,7 @@ export class CollectionService {
     batch.set(savedPostRef, {
       postId,
       savedAt: serverTimestamp(),
+      ...(contentType === 'glimpse' ? { contentType: 'glimpse' } : {}),
     } as SavedPost);
 
     // Increment post count in collection
@@ -194,11 +196,13 @@ export class CollectionService {
       updatedAt: serverTimestamp(),
     });
 
-    // Increment saves count in post
-    const postRef = doc(db, 'posts', postId);
-    batch.update(postRef, {
-      'stats.savesCount': increment(1),
-    });
+    // Increment saves count in post (glimpses are not posts, so no post doc to update)
+    if (contentType === 'post') {
+      const postRef = doc(db, 'posts', postId);
+      batch.update(postRef, {
+        'stats.savesCount': increment(1),
+      });
+    }
 
     await batch.commit();
   }
@@ -290,7 +294,11 @@ export class CollectionService {
    * Unsave a post from all of the user's collections where it exists.
    * Returns the number of collections the post was removed from.
    */
-  async unsavePostFromAllCollections(userId: string, postId: string): Promise<number> {
+  async unsavePostFromAllCollections(
+    userId: string,
+    postId: string,
+    contentType: 'post' | 'glimpse' = 'post'
+  ): Promise<number> {
     const collections = await this.getUserCollections(userId);
     if (collections.length === 0) return 0;
 
@@ -323,10 +331,13 @@ export class CollectionService {
       await batch.commit();
 
       // Decrement savesCount on the post by the number of removed entries
-      const postRef = doc(db, 'posts', postId);
-      await updateDoc(postRef, {
-        'stats.savesCount': increment(-removedCount),
-      });
+      // (glimpses have no post doc to decrement)
+      if (contentType === 'post') {
+        const postRef = doc(db, 'posts', postId);
+        await updateDoc(postRef, {
+          'stats.savesCount': increment(-removedCount),
+        });
+      }
     }
 
     return removedCount;

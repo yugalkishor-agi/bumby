@@ -1346,47 +1346,12 @@ const handleComment = () => {
 
   const saveGlimpseInCollection = async (glimpseToSaveId: string, collectionId: string) => {
     if (!user?.userId || !glimpseToSaveId || !collectionId) return;
-    const entryRef = doc(
-      db,
-      `users/${user.userId}/savedCollections/${collectionId}/posts/${glimpseToSaveId}`
-    );
-    const existing = await getDoc(entryRef);
-    if (existing.exists()) return;
-
-    await setDoc(entryRef, {
-      postId: glimpseToSaveId,
-      contentType: 'glimpse',
-      savedAt: serverTimestamp(),
-    });
-
-    try {
-      const collectionRef = doc(db, `users/${user.userId}/savedCollections/${collectionId}`);
-      await updateDoc(collectionRef, {
-        postsCount: increment(1),
-        updatedAt: serverTimestamp(),
-      });
-    } catch {}
+    await collectionService.savePost(user.userId, glimpseToSaveId, collectionId, 'glimpse');
   };
 
   const unsaveGlimpseFromAllCollections = async (glimpseToUnsaveId: string) => {
     if (!user?.userId || !glimpseToUnsaveId) return;
-    const collections = await collectionService.getUserCollections(user.userId);
-    for (const c of collections) {
-      const entryRef = doc(
-        db,
-        `users/${user.userId}/savedCollections/${c.collectionId}/posts/${glimpseToUnsaveId}`
-      );
-      const snap = await getDoc(entryRef);
-      if (!snap.exists()) continue;
-      await deleteDoc(entryRef);
-      try {
-        const collectionRef = doc(db, `users/${user.userId}/savedCollections/${c.collectionId}`);
-        await updateDoc(collectionRef, {
-          postsCount: increment(-1),
-          updatedAt: serverTimestamp(),
-        });
-      } catch {}
-    }
+    await collectionService.unsavePostFromAllCollections(user.userId, glimpseToUnsaveId, 'glimpse');
   };
 
   const stopVoiceSound = useCallback(async (segmentId: string) => {

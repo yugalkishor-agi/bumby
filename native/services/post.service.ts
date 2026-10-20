@@ -1250,94 +1250,6 @@ export class PostService {
     return postIds.filter((postId) => !!likedMap[likeService.toLookupKey('post', postId)]);
   }
   // ==========================================
-  // SAVE OPERATIONS
-  // ==========================================
-
-  /**
-   * Save a post
-   */
-  async savePost(postId: string, userId: string): Promise<void> {
-    const cachedPost = await cacheIntegration.getCachedPost(postId);
-    const authorId = (cachedPost as any)?.authorId;
-
-    await cacheIntegration.runOptimisticPostMutation({
-      postId,
-      viewerId: userId,
-      authorId,
-      patch: {
-        saved: true,
-        savesDelta: 1,
-      },
-      throttleMs: 160,
-      retries: 1,
-      execute: async () => {
-        await runTransaction(db, async (tx) => {
-          const saveRef = doc(db, `posts/${postId}/saves/${userId}`);
-          const postRef = doc(db, 'posts', postId);
-          const [saveSnap, postSnap] = await Promise.all([tx.get(saveRef), tx.get(postRef)]);
-          if (!postSnap.exists() || saveSnap.exists()) return;
-
-          tx.set(saveRef, {
-            userId,
-            savedAt: serverTimestamp(),
-          });
-          tx.update(postRef, {
-            'stats.savesCount': increment(1),
-          });
-        });
-      },
-      revalidate: async () => {
-        await this.refreshPostInBackground(postId);
-      },
-    });
-  }
-
-  /**
-   * Unsave a post
-   */
-  async unsavePost(postId: string, userId: string): Promise<void> {
-    const cachedPost = await cacheIntegration.getCachedPost(postId);
-    const authorId = (cachedPost as any)?.authorId;
-
-    await cacheIntegration.runOptimisticPostMutation({
-      postId,
-      viewerId: userId,
-      authorId,
-      patch: {
-        saved: false,
-        savesDelta: -1,
-      },
-      throttleMs: 160,
-      retries: 1,
-      execute: async () => {
-        await runTransaction(db, async (tx) => {
-          const saveRef = doc(db, `posts/${postId}/saves/${userId}`);
-          const postRef = doc(db, 'posts', postId);
-          const [saveSnap, postSnap] = await Promise.all([tx.get(saveRef), tx.get(postRef)]);
-          if (!postSnap.exists() || !saveSnap.exists()) return;
-          const currentSaves = Number(postSnap.data()?.stats?.savesCount || 0);
-
-          tx.delete(saveRef);
-          tx.update(postRef, {
-            'stats.savesCount': increment(currentSaves > 0 ? -1 : 0),
-          });
-        });
-      },
-      revalidate: async () => {
-        await this.refreshPostInBackground(postId);
-      },
-    });
-  }
-  /**
-   * Check if user saved post
-   */
-  async hasSaved(postId: string, userId: string): Promise<boolean> {
-    const saveRef = doc(db, `posts/${postId}/saves/${userId}`);
-    const saveSnap = await getDoc(saveRef);
-    return saveSnap.exists();
-  }
-
-  // ==========================================
   // COMMENT OPERATIONS
   // ==========================================
 
@@ -1351,12 +1263,13 @@ export class PostService {
     authorAvatarURL: string,
     text: string,
     parentCommentId?: string,
-    mentions: string[] = []
+    mentions: string[] = [],
+    collectionType: 'posts' | 'glimpses' = 'posts'
   ): Promise<string> {
     const batch = writeBatch(db);
 
     // Create comment
-    const commentRef = doc(collection(db, `posts/${postId}/comments`));
+    const commentRef = doc(collection(db, `${collectionType}/${postId}/comments`));
     const commentId = commentRef.id;
 
     batch.set(commentRef, {
@@ -1378,25 +1291,31 @@ export class PostService {
 
     // If this is a reply, increment parent comment's repliesCount
     if (parentCommentId) {
-      const parentCommentRef = doc(db, `posts/${postId}/comments/${parentCommentId}`);
+      const parentCommentRef = doc(db, `${collectionType}/${postId}/comments/${parentCommentId}`);
       batch.update(parentCommentRef, {
         repliesCount: increment(1),
         updatedAt: serverTimestamp(),
       });
     }
 
-    // Update post stats
-    const postRef = doc(db, 'posts', postId);
-    batch.update(postRef, {
+    // Update parent stats
+    const postRef = doc(db, collectionType, postId);
+    const statsUpdate: Record<string, any> = {
       'stats.commentsCount': increment(1),
       engagement: increment(1),
       lastEngagementAt: serverTimestamp(),
-    });
+    };
+    if (collectionType === 'glimpses') {
+      statsUpdate.repliesCount = increment(1);
+    }
+    batch.update(postRef, statsUpdate);
 
     await batch.commit();
 
     // Send notification to post owner / replied commenter (fire and forget)
-    this.notifyPostComment(postId, authorId, authorUsername, authorAvatarURL, text, commentId, parentCommentId || undefined);
+    if (collectionType === 'posts') {
+      this.notifyPostComment(postId, authorId, authorUsername, authorAvatarURL, text, commentId, parentCommentId || undefined);
+    }
 
     return commentId;
   }
