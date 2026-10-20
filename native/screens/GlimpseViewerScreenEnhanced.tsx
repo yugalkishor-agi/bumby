@@ -11,7 +11,8 @@ import { VerifiedBadge } from '../components/ui/VerifiedBadge';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Avatar } from '../components/ui/Avatar';
 import { colors } from '../styles/theme';
-import { GlimpseEditorMeta, getGlimpseStylePreset } from '../utils/glimpseEditor';
+import type { Glimpse } from '../types/database';
+import { getGlimpseStylePreset, type GlimpseEditorMeta } from '../utils/glimpseEditor';
 import { useAuth } from '../contexts/AuthContext';
 import { glimpseService } from '../services/glimpse.service';
 import { reportService } from '../services/report.service';
@@ -40,46 +41,6 @@ const ensureGlimpseMusicAudioMode = async () => {
   });
   glimpseMusicAudioModeConfigured = true;
 };
-
-interface Glimpse {
-  glimpseId: string;
-  authorId: string;
-  authorUsername: string;
-  authorAvatarURL?: string;
-  authorVerified?: boolean;
-  mediaURL: string;
-  mediaType: 'image' | 'video';
-  thumbnailURL?: string;
-  coverImageURL?: string;
-  caption?: string;
-  editorMeta?: GlimpseEditorMeta | null;
-  trimStart?: number | null;
-  trimEnd?: number | null;
-  duration?: number;
-  audience?: 'public' | 'followers' | 'closeFriends' | 'close_friends';
-  allowReplies?: boolean;
-  allowSharing?: boolean;
-  settings?: { allowComments?: boolean; hideLikes?: boolean };
-  backgroundMusic?: {
-    trackTitle: string;
-    artistName: string;
-    coverArtURL?: string;
-    streamURL?: string;
-    clipStart?: number;
-    clipEnd?: number;
-  };
-  stats: {
-    likesCount: number;
-    commentsCount: number;
-    sharesCount: number;
-    viewsCount: number;
-  };
-  tags?: string[];
-  mentions?: string[];
-  createdAt: any;
-  isLiked?: boolean;
-  isSaved?: boolean;
-}
 
 const extractMediaDimensions = (item: any): { width: number; height: number } | null => {
   const candidates = [
@@ -1632,7 +1593,7 @@ const handleComment = () => {
   };
   const renderGlimpse = (glimpse: Glimpse, index: number) => {
     const isActive = index === currentIndex;
-    const editorMeta = glimpse.editorMeta || {};
+    const editorMeta: GlimpseEditorMeta = glimpse.editorMeta || {};
     const selectedStyle = getGlimpseStylePreset(editorMeta.styleId);
     const overlayText = (editorMeta.overlayText || '').trim();
     const overlayPositionStyle = editorMeta.overlayPosition === 'top'
@@ -1640,17 +1601,17 @@ const handleComment = () => {
       : editorMeta.overlayPosition === 'bottom'
         ? styles.editorOverlayBottom
         : styles.editorOverlayCenter;
-    const overlayColor = (editorMeta as any).overlayColor || selectedStyle.textColor;
-    const overlayAlign = (editorMeta as any).overlayAlign || 'center';
-    const overlayBackground = (editorMeta as any).overlayBackground || 'none';
-    const overlayEffect = (editorMeta as any).overlayEffect || 'clean';
-    const overlayOffsetX = Number((editorMeta as any).overlayOffsetX || 0);
-    const overlayOffsetY = Number((editorMeta as any).overlayOffsetY || 0);
-    const overlayScale = Number((editorMeta as any).overlayScale || 1);
-    const overlayRotation = Number((editorMeta as any).overlayRotation || 0);
-    const editedVideoVolume = Number((editorMeta as any).videoVolume ?? 1);
-    const editedVideoMuted = Boolean((editorMeta as any).videoMuted ?? false);
-    const overlayLayers = (editorMeta as any).overlayLayers || [];
+    const overlayColor = editorMeta.overlayColor || selectedStyle.textColor;
+    const overlayAlign = editorMeta.overlayAlign || 'center';
+    const overlayBackground = editorMeta.overlayBackground || 'none';
+    const overlayEffect = editorMeta.overlayEffect || 'clean';
+    const overlayOffsetX = Number(editorMeta.overlayOffsetX || 0);
+    const overlayOffsetY = Number(editorMeta.overlayOffsetY || 0);
+    const overlayScale = Number(editorMeta.overlayScale || 1);
+    const overlayRotation = Number(editorMeta.overlayRotation || 0);
+    const editedVideoVolume = Number(editorMeta.videoVolume ?? 1);
+    const editedVideoMuted = Boolean(editorMeta.videoMuted ?? false);
+    const overlayLayers = editorMeta.overlayLayers || [];
     const overlayShellStyle = overlayBackground === 'black'
       ? styles.editorOverlayShellBlack
       : overlayBackground === 'white'

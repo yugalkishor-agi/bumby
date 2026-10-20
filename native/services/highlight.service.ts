@@ -17,15 +17,10 @@ import {
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { cacheIntegration } from './cacheIntegration.service';
+import type { Story as DBStory } from '../types/database';
 
-interface Story {
-  storyId: string;
-  authorId: string;
-  mediaURL: string;
-  mediaType: 'image' | 'video';
-  createdAt: any;
-  expiresAt: any;
-}
+/** The story fields a highlight actually carries - derived from the schema. */
+type Story = Pick<DBStory, 'storyId' | 'authorId' | 'mediaURL' | 'mediaType' | 'createdAt' | 'expiresAt'>;
 
 export interface Highlight {
   highlightId: string;

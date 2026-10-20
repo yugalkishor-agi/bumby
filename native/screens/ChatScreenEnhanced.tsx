@@ -42,7 +42,7 @@ import { MessageForwardModal } from '../components/chat/MessageForwardModal';
 import { Avatar } from '../components/ui/Avatar';
 import { MentionAutocomplete } from '../components/ui/MentionAutocomplete';
 import { DEFAULT_REACTIONS, QUICK_REACTION_KEY, getChatAccent, getChatGradient } from '../constants/chat';
-import type { ActionMenuAnchor, ChatMessage, ChatReactionUsersMap } from '../components/chat/chat.types';
+import type { ActionMenuAnchor, ChatMessage, ChatReactionUsersMap } from '../types/chat';
 import chatScreenStyles from './chat/chatScreen.styles';
 import type { ChatRouteSeedUser, ChatScreenRouteProp, DisplayMessage, DisplayMessageCacheEntry, PickerTab, PinnedState, StickerPick } from './chat/chatScreen.types';
 import { buildDisplayMessageSignature, formatDayTimeLabel as formatDayTimeLabelValue, formatMessageTime, formatPresenceTime as formatPresenceTimeValue, formatSeenAge as formatSeenAgeValue, getDayKey as getDayKeyValue, MESSAGE_TIME_GAP_SEPARATOR_MS, stabilizeChatTextForRender, toTimestampMs } from './chat/chatScreen.utils';
@@ -1049,7 +1049,11 @@ export default function ChatScreen() {
   }, [conversationId]);
 
   const displayMessages: DisplayMessage[] = useMemo(() => {
-    const base = chatMessages.length > 0 ? chatMessages : cachedMessages;
+    // The cache only backs the list up until fresh messages arrive, so it can
+    // legitimately be shorter-lived than `chatMessages`; entries read from it
+    // may still carry UI-only fields that the document type does not declare.
+    const base: ChatMessage[] =
+      chatMessages.length > 0 ? chatMessages : (cachedMessages as ChatMessage[]);
     const prevCache = displayMessageCacheRef.current;
     const nextCache = new Map<string, DisplayMessageCacheEntry>();
 
@@ -1070,7 +1074,7 @@ export default function ChatScreen() {
         return cached.message;
       }
 
-      const signature = buildDisplayMessageSignature(m as Message, override, pinnedMessage, isDeleted);
+      const signature = buildDisplayMessageSignature(m, override, pinnedMessage, isDeleted);
       if (cached && cached.signature === signature) {
         const reused: DisplayMessageCacheEntry = {
           ...cached,

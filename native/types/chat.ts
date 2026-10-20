@@ -1,4 +1,4 @@
-import type { Message, PollMessage, User } from '../../types/database';
+import type { Message, PollMessage, User } from './database';
 
 export type TimestampLike =
   | Message['createdAt']

@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import type { User } from '../../types/database';
-import type { ChatMessage } from '../../components/chat/chat.types';
+import type { ChatMessage } from '../../types/chat';
 import { toTimestampMs } from '../../screens/chat/chatScreen.utils';
 
 type Params = {

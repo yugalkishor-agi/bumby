@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { chatE2EE } from './chatE2EE.service';
+import type { Message } from '../types/database';
 
 const CACHE_SCHEMA_VERSION = 4;
 const CACHE_TTL_MS = 12 * 60 * 60 * 1000;
@@ -8,14 +9,15 @@ const CACHE_LIMIT = 160;
 const CACHE_BYTE_LIMIT = 512 * 1024;
 const USER_CACHE_INDEX_LIMIT = 48;
 
-type AnyMessage = any;
+/** What the cache holds: plain, serialisable message documents - not the UI view model. */
+type AnyMessage = Message;
 
-type LegacyMessageCacheEntry<T = AnyMessage> = {
+type LegacyMessageCacheEntry<T extends AnyMessage = AnyMessage> = {
   items: T[];
   savedAt: number;
 };
 
-type MessageCacheEnvelope<T = AnyMessage> = {
+type MessageCacheEnvelope<T extends AnyMessage = AnyMessage> = {
   version: number;
   savedAt: number;
   staleAt: number;
@@ -33,7 +35,7 @@ type UserCacheIndexEntry = {
   savedAt: number;
 };
 
-type CacheGetResult<T = AnyMessage> = {
+type CacheGetResult<T extends AnyMessage = AnyMessage> = {
   items: T[];
   savedAt: number;
   staleAt: number;
@@ -83,7 +85,7 @@ const resolveMessageId = (message: AnyMessage, index: number) => {
   return `${senderId}:${fallbackTime}:${index}`;
 };
 
-const dedupeAndSortMessages = <T = AnyMessage>(messages: T[]): T[] => {
+const dedupeAndSortMessages = <T extends AnyMessage = AnyMessage>(messages: T[]): T[] => {
   const deduped = new Map<string, T>();
   messages.forEach((message, index) => {
     const id = resolveMessageId(message, index);
@@ -95,7 +97,7 @@ const dedupeAndSortMessages = <T = AnyMessage>(messages: T[]): T[] => {
   return merged;
 };
 
-const trimMessages = <T = AnyMessage>(messages: T[], limit: number, byteLimit: number): T[] => {
+const trimMessages = <T extends AnyMessage = AnyMessage>(messages: T[], limit: number, byteLimit: number): T[] => {
   let trimmed = messages.slice(-Math.max(1, limit));
   if (trimmed.length <= 1 || byteLimit <= 0) return trimmed;
 
@@ -112,7 +114,7 @@ const trimMessages = <T = AnyMessage>(messages: T[], limit: number, byteLimit: n
   return trimmed;
 };
 
-const buildEnvelope = <T = AnyMessage>(
+const buildEnvelope = <T extends AnyMessage = AnyMessage>(
   conversationId: string,
   userId: string,
   messages: T[],
@@ -141,7 +143,7 @@ const buildEnvelope = <T = AnyMessage>(
   };
 };
 
-const asEnvelope = <T = AnyMessage>(
+const asEnvelope = <T extends AnyMessage = AnyMessage>(
   parsed: any,
   conversationId: string,
   userId: string,
@@ -195,7 +197,7 @@ const asEnvelope = <T = AnyMessage>(
 const isExpired = (entry: MessageCacheEnvelope): boolean => Date.now() > entry.expiresAt;
 const isStale = (entry: MessageCacheEnvelope): boolean => Date.now() > entry.staleAt;
 
-const getMemoryEnvelope = <T = AnyMessage>(conversationId: string, userId: string): MessageCacheEnvelope<T> | null => {
+const getMemoryEnvelope = <T extends AnyMessage = AnyMessage>(conversationId: string, userId: string): MessageCacheEnvelope<T> | null => {
   const key = cacheKey(conversationId, userId);
   const entry = memoryCache.get(key) as MessageCacheEnvelope<T> | undefined;
   if (!entry) return null;
@@ -206,7 +208,7 @@ const getMemoryEnvelope = <T = AnyMessage>(conversationId: string, userId: strin
   return entry;
 };
 
-const setMemoryEnvelope = <T = AnyMessage>(conversationId: string, userId: string, envelope: MessageCacheEnvelope<T>) => {
+const setMemoryEnvelope = <T extends AnyMessage = AnyMessage>(conversationId: string, userId: string, envelope: MessageCacheEnvelope<T>) => {
   memoryCache.set(cacheKey(conversationId, userId), envelope as MessageCacheEnvelope);
 };
 
@@ -266,7 +268,7 @@ const removeFromUserIndex = async (userId: string, conversationId: string): Prom
   await saveUserIndex(userId, next);
 };
 
-const persistEnvelope = async <T = AnyMessage>(envelope: MessageCacheEnvelope<T>): Promise<void> => {
+const persistEnvelope = async <T extends AnyMessage = AnyMessage>(envelope: MessageCacheEnvelope<T>): Promise<void> => {
   const key = cacheKey(envelope.conversationId, envelope.userId);
   setMemoryEnvelope(envelope.conversationId, envelope.userId, envelope);
   try {
@@ -277,12 +279,12 @@ const persistEnvelope = async <T = AnyMessage>(envelope: MessageCacheEnvelope<T>
 };
 
 export const messageCacheService = {
-  peek<T = AnyMessage>(conversationId: string, userId: string): T[] {
+  peek<T extends AnyMessage = AnyMessage>(conversationId: string, userId: string): T[] {
     const entry = getMemoryEnvelope<T>(conversationId, userId);
     return entry?.items || [];
   },
 
-  peekWithMeta<T = AnyMessage>(conversationId: string, userId: string): CacheGetResult<T> {
+  peekWithMeta<T extends AnyMessage = AnyMessage>(conversationId: string, userId: string): CacheGetResult<T> {
     const entry = getMemoryEnvelope<T>(conversationId, userId);
     if (!entry) {
       return { items: [], savedAt: 0, staleAt: 0, expiresAt: 0, stale: false };
@@ -296,12 +298,12 @@ export const messageCacheService = {
     };
   },
 
-  async get<T = AnyMessage>(conversationId: string, userId: string): Promise<T[]> {
+  async get<T extends AnyMessage = AnyMessage>(conversationId: string, userId: string): Promise<T[]> {
     const result = await messageCacheService.getWithMeta<T>(conversationId, userId);
     return result.items;
   },
 
-  async getWithMeta<T = AnyMessage>(conversationId: string, userId: string): Promise<CacheGetResult<T>> {
+  async getWithMeta<T extends AnyMessage = AnyMessage>(conversationId: string, userId: string): Promise<CacheGetResult<T>> {
     if (!conversationId || !userId) {
       return { items: [], savedAt: 0, staleAt: 0, expiresAt: 0, stale: false };
     }
@@ -360,7 +362,7 @@ export const messageCacheService = {
     }
   },
 
-  async set<T = AnyMessage>(conversationId: string, userId: string, messages: T[], options?: CacheSetOptions): Promise<void> {
+  async set<T extends AnyMessage = AnyMessage>(conversationId: string, userId: string, messages: T[], options?: CacheSetOptions): Promise<void> {
     if (!conversationId || !userId || !Array.isArray(messages)) return;
     if (messages.length === 0) {
       await this.clear(conversationId, userId);
@@ -370,18 +372,18 @@ export const messageCacheService = {
     await persistEnvelope(envelope);
   },
 
-  async mergeSet<T = AnyMessage>(conversationId: string, userId: string, messages: T[], options?: CacheSetOptions): Promise<T[]> {
+  async mergeSet<T extends AnyMessage = AnyMessage>(conversationId: string, userId: string, messages: T[], options?: CacheSetOptions): Promise<T[]> {
     const current = await messageCacheService.get<T>(conversationId, userId);
     const merged = dedupeAndSortMessages<T>([...current, ...(messages || [])]);
     await this.set(conversationId, userId, merged, options);
     return merged;
   },
 
-  async upsertMessages<T = AnyMessage>(conversationId: string, userId: string, messages: T[], options?: CacheSetOptions): Promise<T[]> {
+  async upsertMessages<T extends AnyMessage = AnyMessage>(conversationId: string, userId: string, messages: T[], options?: CacheSetOptions): Promise<T[]> {
     return this.mergeSet(conversationId, userId, messages, options);
   },
 
-  async patchMessage<T = AnyMessage>(
+  async patchMessage<T extends AnyMessage = AnyMessage>(
     conversationId: string,
     userId: string,
     messageId: string,

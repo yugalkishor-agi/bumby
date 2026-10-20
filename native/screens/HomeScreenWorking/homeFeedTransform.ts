@@ -1,6 +1,29 @@
+import type { Post as DocumentPost } from '../../types/database';
 import type { Post, Story } from './homeFeedTypes';
 
-export function transformFeedPost(raw: any): Post {
+/**
+ * A feed item reaches us either as a raw Firestore post document or as an
+ * already-lean view model from an older cache payload: canonical document
+ * fields, plus the handful of names only the legacy payloads still use.
+ * `raw` is only ever read here, never stored.
+ */
+type RawFeedPost = Partial<DocumentPost> &
+  Pick<
+    Partial<Post>,
+    | 'userId'
+    | 'username'
+    | 'displayName'
+    | 'avatarURL'
+    | 'verified'
+    | 'content'
+    | 'latestCommentText'
+    | 'latestCommentUser'
+  > & {
+    /** Even older documents called the author id `ownerId`. */
+    ownerId?: string;
+  };
+
+export function transformFeedPost(raw: RawFeedPost): Post {
   return {
     postId: raw.postId,
     userId: raw.authorId || raw.userId || raw.ownerId,

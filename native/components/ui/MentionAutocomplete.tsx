@@ -7,14 +7,11 @@ import { VerifiedBadge } from './VerifiedBadge';
 import { colors, spacing, borderRadius, typography } from '../../styles/theme';
 import { userService } from '../../services/user.service';
 import { FlashList } from '@shopify/flash-list';
+import type { User as DBUser } from '../../types/database';
 
-interface User {
-  userId: string;
-  username: string;
-  displayName: string;
-  avatarURL?: string;
-  verified?: boolean;
-}
+/** What the mention picker surfaces - a narrow view of a user document. */
+type User = Pick<DBUser, 'userId' | 'username' | 'displayName' | 'avatarURL'> &
+  Partial<Pick<DBUser, 'verified'>>;
 
 interface MentionAutocompleteProps {
   query: string;

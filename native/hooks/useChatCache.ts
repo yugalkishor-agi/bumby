@@ -1,11 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { messageCacheService } from '../services/messageCache.service';
+import type { Message } from '../types/database';
 
-type Message = any;
-
+/**
+ * Read-only view of the persisted chat cache. Writes happen at the source
+ * (message.service on send, useMessages on fetch), not from the screen - so
+ * there is deliberately no `persistCache` here.
+ */
 type UseChatCacheReturn = {
   cachedMessages: Message[];
-  persistCache: (messages: Message[]) => void;
 };
 
 export function useChatCache(
@@ -13,15 +16,10 @@ export function useChatCache(
   userId?: string
 ): UseChatCacheReturn {
   const [cachedMessages, setCachedMessages] = useState<Message[]>([]);
-  const persistTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const persistSignatureRef = useRef('');
 
   useEffect(() => {
-    if (persistTimerRef.current) {
-      clearTimeout(persistTimerRef.current);
-      persistTimerRef.current = null;
-    }
-    persistSignatureRef.current = '';
+    // Drop the previous conversation's snapshot the moment we switch away.
+    setCachedMessages([]);
     if (!conversationId || !userId) return;
     let cancelled = false;
     messageCacheService
@@ -35,32 +33,5 @@ export function useChatCache(
     };
   }, [conversationId, userId]);
 
-  const persistCache = useCallback((messages: Message[]) => {
-    if (!conversationId || !userId || !messages?.length) return;
-    const last = messages[messages.length - 1] as any;
-    const signature = `${messages.length}:${String(last?.messageId || '')}:${String(last?.status || '')}`;
-    if (signature === persistSignatureRef.current) return;
-
-    if (persistTimerRef.current) {
-      clearTimeout(persistTimerRef.current);
-    }
-    persistTimerRef.current = setTimeout(() => {
-      messageCacheService
-        .set(conversationId, userId, messages)
-        .then(() => {
-          persistSignatureRef.current = signature;
-        })
-        .catch(() => undefined);
-    }, 420);
-  }, [conversationId, userId]);
-
-  useEffect(() => {
-    return () => {
-      if (persistTimerRef.current) {
-        clearTimeout(persistTimerRef.current);
-      }
-    };
-  }, []);
-
-  return { cachedMessages, persistCache };
+  return { cachedMessages };
 }

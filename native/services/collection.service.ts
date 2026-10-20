@@ -15,23 +15,18 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
-import type { Post } from '../types/database';
+import type { Collection, Post } from '../types/database';
 
-export interface Collection {
-  collectionId: string;
-  userId: string;
-  name: string;
-  coverImageURL?: string;
-  isPrivate: boolean;
-  postsCount: number;
-  createdAt: any;
-  updatedAt: any;
-}
-
-export interface SavedPost {
+/**
+ * A save marker document: just the reference and when it was saved, plus an
+ * optional contentType for glimpses. (The fuller `SavedPost` record in
+ * types/database is the read-side projection - not this write payload.)
+ */
+type SaveMarker = {
   postId: string;
-  savedAt: any;
-}
+  savedAt: unknown;
+  contentType?: string;
+};
 
 export class CollectionService {
   // ==========================================
@@ -184,7 +179,7 @@ export class CollectionService {
       postId,
       savedAt: serverTimestamp(),
       ...(contentType === 'glimpse' ? { contentType: 'glimpse' } : {}),
-    } as SavedPost);
+    } as SaveMarker);
 
     // Increment post count in collection
     const collectionRef = doc(

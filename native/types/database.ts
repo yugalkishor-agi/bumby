@@ -154,6 +154,19 @@ export interface Post {
   }>;
   altText?: string;
   stats: PostStats;
+  /**
+   * Viewer-hydrated state. These are never stored on the post document - services
+   * attach them after reading - so they are always optional.
+   */
+  isLiked?: boolean;
+  isSaved?: boolean;
+  latestComment?: {
+    text?: string;
+    comment?: string;
+    username?: string;
+    authorUsername?: string;
+    authorName?: string;
+  };
   commentsEnabled: boolean;
   hideLikesCount: boolean;
   hideSharesCount?: boolean;
@@ -251,6 +264,8 @@ export interface Comment {
   isPinned: boolean;
   isEdited: boolean;
   likedByAuthor?: boolean; // True if post author liked this comment
+  isLiked?: boolean; // Viewer-hydrated: has the viewer liked this comment
+  isVerified?: boolean; // Viewer-hydrated from the author's user document
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
@@ -351,6 +366,68 @@ export interface Highlight {
 }
 
 // ==========================================
+// GLIMPSE TYPES
+// ==========================================
+
+/**
+ * A Glimpse is a one-to-one ephemeral clip (the counterpart of a Story).
+ * This is the single definition - services and screens must import it from here
+ * rather than re-declaring their own.
+ */
+export interface Glimpse {
+  glimpseId: string;
+  authorId: string;
+  authorUsername: string;
+  authorAvatarURL?: string;
+  authorVerified?: boolean;
+  mediaURL: string;
+  mediaType: 'image' | 'video';
+  thumbnailURL?: string;
+  coverImageURL?: string;
+  caption?: string;
+  /**
+   * Editor-only state (filters, text layers, stickers) persisted with the clip.
+   * The editor owns the definition; this file only references it.
+   */
+  editorMeta?: GlimpseEditorMeta | null;
+  trimStart?: number | null;
+  trimEnd?: number | null;
+  duration?: number;
+  audience?: 'public' | 'followers' | 'closeFriends' | 'close_friends';
+  allowReplies?: boolean;
+  allowSharing?: boolean;
+  settings?: { allowComments?: boolean; hideLikes?: boolean };
+  backgroundMusic?: {
+    trackTitle: string;
+    artistName: string;
+    coverArtURL?: string;
+    streamURL?: string;
+    clipStart?: number;
+    clipEnd?: number;
+  };
+  stats: {
+    likesCount: number;
+    commentsCount: number;
+    sharesCount: number;
+    viewsCount: number;
+  };
+  tags?: string[];
+  mentions?: string[];
+  createdAt: Timestamp;
+  /** Viewer-hydrated; never stored on the document. */
+  isLiked?: boolean;
+  isSaved?: boolean;
+}
+
+/**
+ * Whatever the editor stashed on a clip. Defined next to the editor code in
+ * utils/glimpseEditor - imported here (type-only) so `Glimpse` stays self-
+ * describing without the schema file owning an editor concept.
+ */
+export type { GlimpseEditorMeta } from '../utils/glimpseEditor';
+import type { GlimpseEditorMeta } from '../utils/glimpseEditor';
+
+// ==========================================
 // MESSAGE TYPES
 // ==========================================
 
@@ -385,9 +462,14 @@ export interface Conversation {
   removedMembers?: Record<string, { removedBy: string; removedAtMs: number }>;
   participantIds: string[];
   participantCount: number;
-  lastMessage: LastMessage;
+  /** Written as `null` while a conversation is still being created. */
+  lastMessage: LastMessage | null;
   unreadCounts: { [userId: string]: number };
   mutedBy?: string[];
+  /** User who created the conversation (groups). */
+  createdBy?: string;
+  /** Millisecond mirror of lastMessageAt, kept for cheap client-side sorting. */
+  lastMessageAtMs?: number;
   pinnedBy?: string[];
   deletedBy?: string[];
   archivedBy?: string[]; // Users who archived this conversation
@@ -438,6 +520,8 @@ export interface Message {
   encryptedPayload?: MessageEncryptedPayload;
   e2eeState?: 'encrypted' | 'decrypted' | 'locked';
   mediaURL?: string;
+  /** Legacy lowercase-l variant that older documents actually stored. */
+  mediaUrl?: string;
   mediaType?: 'image' | 'video' | 'audio' | 'file';
   mediaItems?: Array<{
     url: string;
@@ -504,6 +588,12 @@ export interface Message {
   isRead?: boolean;
   acceptedAt?: Timestamp;
   rejectedAt?: Timestamp;
+  /**
+   * Client-side send time. Written by message.service so the sending device can
+   * order its own optimistic messages before Firestore assigns createdAt.
+   */
+  clientCreatedAtMs?: number;
+  clientTimestamp?: Timestamp;
 }
 
 // ==========================================
@@ -1053,10 +1143,11 @@ export interface Collection {
   userId: string;
   name: string;
   description?: string;
-  coverImage?: string;
+  coverImageURL?: string;
   isPrivate: boolean;
-  postCount: number;
-  postIds: string[];
+  postsCount: number;
+  /** Denormalised list of saved post ids; newer collections rely on the posts subcollection instead. */
+  postIds?: string[];
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }

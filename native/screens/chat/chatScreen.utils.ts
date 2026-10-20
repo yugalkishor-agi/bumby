@@ -1,5 +1,5 @@
-import type { Message } from '../../types/database';
-import type { TimestampLike } from '../../components/chat/chat.types';
+import type { DisplayMessage } from './chatScreen.types';
+import type { TimestampLike } from '../../types/chat';
 
 export const MESSAGE_TIME_GAP_SEPARATOR_MS = 20 * 60 * 1000;
 
@@ -142,7 +142,7 @@ export const formatPresenceTime = (timestamp: TimestampLike): string => {
 };
 
 export const buildDisplayMessageSignature = (
-  message: Message,
+  message: DisplayMessage,
   overrideText: string | undefined,
   pinnedMessage: boolean,
   isDeletedMessage: boolean
@@ -159,7 +159,7 @@ export const buildDisplayMessageSignature = (
           .join('|')
       : '';
   const updatedAtMs = toTimestampMs(message?.updatedAt);
-  const editedAtMs = toTimestampMs((message as Message & { editedAt?: TimestampLike })?.editedAt);
+  const editedAtMs = toTimestampMs((message as DisplayMessage & { editedAt?: TimestampLike })?.editedAt);
   const createdAtMs = toTimestampMs(message?.createdAt);
 
   return [

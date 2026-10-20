@@ -10,20 +10,22 @@ import { db } from '../config/firebase';
 import { userService } from './user.service';
 import { postService } from './post.service';
 import { glimpseService } from './glimpse.service';
+import type { User as DBUser } from '../types/database';
 
-// User type from userService
-interface User {
-  userId: string;
-  username: string;
-  displayName?: string;
-  email: string;
-  avatarURL?: string;
-  bio?: string;
+/**
+ * The user fields the suggestion query reads. Derived from the schema; the
+ * follower counters are flattened here by the query rather than read out of
+ * `stats`, and the index signature keeps the scoring pass free to stash
+ * working values on a candidate.
+ */
+type User = Pick<
+  DBUser,
+  'userId' | 'username' | 'displayName' | 'email' | 'avatarURL' | 'bio' | 'createdAt'
+> & {
   followersCount?: number;
   followingCount?: number;
-  createdAt: any;
   [key: string]: any;
-}
+};
 
 export interface SuggestedUser extends User {
   score: number;

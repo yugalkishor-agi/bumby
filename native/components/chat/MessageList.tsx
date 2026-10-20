@@ -1,5 +1,5 @@
 import React, { useRef, useCallback, memo } from 'react';
-import type { ChatMessage } from './chat.types';
+import type { ChatMessage } from '../../types/chat';
 import { FlatListProps, ViewToken } from 'react-native';
 import { FlashList, FlashListProps } from '@shopify/flash-list';
 import type { ListRenderItem } from '@shopify/flash-list';

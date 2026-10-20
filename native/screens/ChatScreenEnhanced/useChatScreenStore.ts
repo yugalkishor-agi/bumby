@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { User, Message } from '../../types/database';
-import type { ChatMessage } from '../../components/chat/chat.types';
+import type { ChatMessage } from '../../types/chat';
 import type { PrivacySettings } from '../../services/settings.service';
 import type { PinnedState, PickerTab } from '../chat/chatScreen.types';
 

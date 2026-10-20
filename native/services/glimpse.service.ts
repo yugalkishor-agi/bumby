@@ -26,10 +26,6 @@ import { likeService, type LikeLookupItem } from './like.service';
 import { cacheIntegration } from './cacheIntegration.service';
 import { imageCacheService } from './imageCache.service';
 
-interface Glimpse extends Story {
-  glimpseId: string;
-}
-
 function extractTaggedUserIds(taggedUsers?: Array<{ userId?: string; username?: string }>) {
   const ids = (taggedUsers || [])
     .map((item) => (item?.userId ? String(item.userId) : ''))

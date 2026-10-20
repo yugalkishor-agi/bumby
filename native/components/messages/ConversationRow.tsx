@@ -3,17 +3,15 @@ import { View, Text, StyleSheet, TouchableOpacity, Pressable, Platform } from 'r
 import { Ionicons } from '@expo/vector-icons';
 import { Avatar } from '../ui/Avatar';
 import { VerifiedBadge } from '../ui/VerifiedBadge';
+import type { User as DBUser } from '../../types/database';
 
-interface User {
-  userId: string;
-  username: string;
-  displayName?: string;
-  avatarURL?: string;
-  verified?: boolean;
-  settings?: { showOnlineStatus?: boolean };
-  isOnline?: boolean;
-  lastSeen?: any;
-}
+/**
+ * The slice of a user document this row actually renders. Derived from the
+ * schema so the field names can never drift, but kept narrow (and all-but-id
+ * optional) because callers may pass a partially-loaded participant.
+ */
+type ConversationUser = Pick<DBUser, 'userId' | 'username'> &
+  Partial<Pick<DBUser, 'displayName' | 'avatarURL' | 'verified' | 'isOnline'>>;
 
 interface Conversation {
   conversationId: string;
@@ -39,7 +37,7 @@ interface Conversation {
 interface ConversationRowProps {
   conversation: Conversation;
   currentUserId?: string | null;
-  conversationUser?: User | null;
+  conversationUser?: ConversationUser | null;
   draft?: string;
   isTyping?: boolean;
   isOnline?: boolean;

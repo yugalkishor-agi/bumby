@@ -1,6 +1,6 @@
 import type { RouteProp } from '@react-navigation/native';
-import type { User, Message } from '../../types/database';
-import type { ChatMessage } from '../../components/chat/chat.types';
+import type { User } from '../../types/database';
+import type { ChatMessage } from '../../types/chat';
 
 export type ChatRouteSeedUser = Pick<
   User,
@@ -24,7 +24,8 @@ export type ChatScreenRouteProp = RouteProp<{ Chat: ChatRouteParams }, 'Chat'>;
 export type DisplayMessage = ChatMessage;
 
 export type DisplayMessageCacheEntry = {
-  source: Message;
+  /** Identity handle for memo comparison; never read for its fields. */
+  source: DisplayMessage;
   overrideText?: string;
   pinned: boolean;
   isDeleted: boolean;
