@@ -1,21 +1,21 @@
-{
+﻿{
   "project_info": {
-    "project_number": "631052732103",
-    "project_id": "vedxbuilder",
-    "storage_bucket": "vedxbuilder.firebasestorage.app"
+    "project_number": "20621914868",
+    "project_id": "socialapp-e5192",
+    "storage_bucket": "socialapp-e5192.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:631052732103:android:YOUR_APP_ID",
+        "mobilesdk_app_id": "1:20621914868:android:715fc83ada9c857aafa4a1",
         "android_client_info": {
-          "package_name": "com.iris.app"
+          "package_name": "com.offcial.social"
         }
       },
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyAIW06T-R_x6BoGJ6qXX-QWE2hhGLkkvkk"
+          "current_key": "AIzaSyCRkTQxIcmP_buOJGwfbBwsKFkxr3cpHsw"
         }
       ],
       "services": {

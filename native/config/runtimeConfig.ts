@@ -63,31 +63,20 @@ const supabaseOverride = TEMP_SUPABASE_OVERRIDE_ENABLED ? TEMP_SUPABASE_OVERRIDE
 
 const FALLBACKS = {
   supabase: {
-    url: 'https://phnhiegifgjhblqaojsg.supabase.co',
-    anonKey: 'ssb_publishable_D7Ejll7Zf4XDyZH5UNBp3A_oVLISjg4',
+    url: 'https://ilchgntolshbomhfswln.supabase.co',
+    anonKey: 'sb_publishable_GSxLUCHWEAaHpZ9xrbLLsQ_vs932Sb2',
     cdnUrl: undefined as OptionalString,
   },
   firebase: {
-    apiKey: 'AIzaSyAIW06T-R_x6BoGJ6qXX-QWE2hhGLkkvkk',
-    authDomain: 'vedxbuilder.firebaseapp.com',
-    databaseURL: 'https://vedxbuilder-default-rtdb.firebaseio.com',
-    projectId: 'vedxbuilder',
-    storageBucket: 'vedxbuilder.firebasestorage.app',
-    messagingSenderId: '631052732103',
-    appId: '1:631052732103:web:523756e51e05b964c560e2',
+    apiKey: 'AIzaSyCRkTQxIcmP_buOJGwfbBwsKFkxr3cpHsw',
+    authDomain: 'socialapp-e5192.firebaseapp.com',
+    databaseURL: 'https://socialapp-e5192-default-rtdb.firebaseio.com',
+    projectId: 'socialapp-e5192',
+    storageBucket: 'socialapp-e5192.firebasestorage.app',
+    messagingSenderId: '20621914868',
+    appId: '1:20621914868:android:715fc83ada9c857aafa4a1',
     measurementId: undefined,
   },
-
-//   firebase: {
-//   apiKey: 'AIzaSyD9PHBh208uc4lDO9F3lvBUFUotnzGd56k',
-//   authDomain: 'appmode-a6696.firebaseapp.com',
-//   databaseURL: 'https://appmode-a6696-default-rtdb.firebaseio.com',
-//   projectId: 'appmode-a6696',
-//   storageBucket: 'appmode-a6696.firebasestorage.app',
-//   messagingSenderId: '350506689842',
-//   appId: '1:350506689842:web:28faec26001e4f1331632b',
-//   measurementId: 'G-SL94R1QEMC',
-// },
 
 } as const;
 

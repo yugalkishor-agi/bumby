@@ -35,7 +35,7 @@
         <action android:name="android.intent.action.VIEW"/>
         <category android:name="android.intent.category.DEFAULT"/>
         <category android:name="android.intent.category.BROWSABLE"/>
-        <data android:scheme="com.iris.app"/>
+        <data android:scheme="com.offcial.social"/>
       </intent-filter>
     </activity>
   </application>

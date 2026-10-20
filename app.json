@@ -17,15 +17,15 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.iris.app"
+      "bundleIdentifier": "com.offcial.social"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./public/Iris-logo.png",
         "backgroundColor": "#0D0D0D"
       },
-      "googleServicesFile": "./android-google-services.json",
-      "package": "com.iris.app",
+      "googleServicesFile": "./google-services.json",
+      "package": "com.offcial.social",
       "permissions": [
         "CAMERA",
         "RECORD_AUDIO"

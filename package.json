@@ -57,7 +57,7 @@
     "expo-screen-capture": "~7.0.1",
     "expo-status-bar": "~2.0.0",
     "expo-video-thumbnails": "~9.0.3",
-    "firebase": "^12.4.0",
+    "firebase": "^12.19.0",
     "firebase-admin": "^13.10.0",
     "fontkit": "^2.0.4",
     "immer": "^11.1.8",
