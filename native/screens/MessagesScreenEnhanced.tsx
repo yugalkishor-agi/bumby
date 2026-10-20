@@ -4,7 +4,6 @@ import { useNavigation, useRoute, useFocusEffect, useIsFocused } from '@react-na
 import { useAuth } from '../contexts/AuthContext';
 import { colors, spacing } from '../styles/theme';
 import type { Conversation, User } from '../types/database';
-import { appWarmupService } from '../services/appWarmup.service';
 import { messageService } from '../services/message.service';
 
 // Hooks
@@ -20,7 +19,24 @@ import MessagesHeader from '../components/messages/MessagesHeader';
 import MessagesTabs from '../components/messages/MessagesTabs';
 import ActiveUsersList from '../components/messages/ActiveUsersList';
 import ConversationList from '../components/messages/ConversationList';
-import ConversationActionsSheet from '../components/messages/ConversationActionsSheet';
+import ConversationActionsSheet, {
+  type ConversationAction,
+} from '../components/messages/ConversationActionsSheet';
+
+/**
+ * Conversation flags (pinned / muted / archived) are written as per-user arrays,
+ * but older documents stored `mutedBy` as a `userId -> { isMuted }` map.
+ * Read either shape without trusting the declared type.
+ */
+const hasUserFlag = (flag: unknown, userId: string): boolean => {
+  if (Array.isArray(flag)) return flag.includes(userId);
+  if (flag && typeof flag === 'object') {
+    const entry = (flag as Record<string, unknown>)[userId];
+    if (typeof entry === 'boolean') return entry;
+    return !!(entry as { isMuted?: boolean } | undefined)?.isMuted;
+  }
+  return false;
+};
 
 export default function MessagesScreenEnhanced() {
   const navigation = useNavigation<any>();
@@ -198,6 +214,76 @@ export default function MessagesScreenEnhanced() {
       ? archivedConversations 
       : conversations;
 
+  const sheetConversation = actionSheetConversation;
+  const sheetOtherUser = sheetConversation
+    ? conversationUsers[sheetConversation.conversationId]
+    : undefined;
+
+  const sheetTitle = !sheetConversation
+    ? undefined
+    : sheetConversation.type === 'group'
+      ? sheetConversation.groupName || 'Group chat'
+      : sheetOtherUser?.displayName || sheetOtherUser?.username || 'Conversation';
+
+  const sheetActions: ConversationAction[] = !sheetConversation || !currentUserId
+    ? []
+    : [
+        {
+          key: 'pin',
+          label: hasUserFlag(sheetConversation.pinnedBy, currentUserId)
+            ? 'Unpin conversation'
+            : 'Pin conversation',
+          onPress: () =>
+            pinConversation(
+              sheetConversation.conversationId,
+              !hasUserFlag(sheetConversation.pinnedBy, currentUserId)
+            ),
+        },
+        {
+          key: 'mute',
+          label: hasUserFlag(sheetConversation.mutedBy, currentUserId)
+            ? 'Unmute notifications'
+            : 'Mute notifications',
+          onPress: () =>
+            muteConversation(
+              sheetConversation.conversationId,
+              !hasUserFlag(sheetConversation.mutedBy, currentUserId)
+            ),
+        },
+        {
+          key: 'archive',
+          label: hasUserFlag(sheetConversation.archivedBy, currentUserId)
+            ? 'Unarchive conversation'
+            : 'Archive conversation',
+          onPress: () =>
+            archiveConversation(
+              sheetConversation.conversationId,
+              !hasUserFlag(sheetConversation.archivedBy, currentUserId)
+            ),
+        },
+        {
+          key: 'mark-unread',
+          label: 'Mark as unread',
+          onPress: () => markAsUnread(sheetConversation.conversationId),
+        },
+        {
+          key: 'delete',
+          label: 'Delete conversation',
+          destructive: true,
+          onPress: () => deleteConversation(sheetConversation.conversationId),
+        },
+        ...(sheetConversation.type === 'direct' && sheetOtherUser?.userId
+          ? [
+              {
+                key: 'block',
+                label: 'Block user',
+                destructive: true,
+                onPress: () => blockUser(sheetConversation, sheetOtherUser),
+              },
+            ]
+          : []),
+      ];
+
   return (
     <View style={styles.container}>
       <MessagesHeader
@@ -240,16 +326,9 @@ export default function MessagesScreenEnhanced() {
 
       <ConversationActionsSheet
         visible={actionSheetVisible}
-        // @ts-ignore
-        conversation={actionSheetConversation}
-        otherUser={actionSheetConversation ? conversationUsers[actionSheetConversation.conversationId] : undefined}
+        title={sheetTitle}
+        actions={sheetActions}
         onClose={() => setActionSheetVisible(false)}
-        onPin={(c, isPinned) => pinConversation(c.conversationId, isPinned)}
-        onMute={(c, isMuted) => muteConversation(c.conversationId, isMuted)}
-        onArchive={(c, isArchived) => archiveConversation(c.conversationId, isArchived)}
-        onDelete={(c) => deleteConversation(c.conversationId)}
-        onMarkUnread={(c) => markAsUnread(c.conversationId)}
-        onBlockUser={(c, u) => blockUser(c, u)}
       />
     </View>
   );
