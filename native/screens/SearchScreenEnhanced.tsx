@@ -3,8 +3,7 @@ import { View, StyleSheet, TouchableOpacity, Text, ScrollView, ActivityIndicator
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-// @ts-ignore
-import { useStore } from '../../src/store';
+import { useAuth } from '../contexts/AuthContext';
 
 import { useSearchState } from '../hooks/search/useSearchState';
 import { useRecentSearches } from '../hooks/search/useRecentSearches';
@@ -30,7 +29,7 @@ type SearchScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 export default function SearchScreenEnhanced() {
   const navigation = useNavigation<SearchScreenNavigationProp>();
-  const user = useStore((state) => state.user);
+  const { user } = useAuth();
 
   const {
     query,
@@ -54,15 +53,15 @@ export default function SearchScreenEnhanced() {
     persistRecentSearch,
     clearAllRecentSearches,
     removeRecentSearch,
-  } = useRecentSearches(user?.id);
+  } = useRecentSearches(user?.userId);
 
-  const { userResults, tagResults, postResults } = useSearchQuery(user?.id, query, persistRecentSearch);
+  const { userResults, tagResults, postResults } = useSearchQuery(user?.userId, query, persistRecentSearch);
 
   const {
     trendingTags,
     discoverColumns,
     loadFresh,
-  } = useExploreContent(user?.id, recentSearchesKey, setRecentSearches, setLoading, setRefreshing, isReady);
+  } = useExploreContent(user?.userId, recentSearchesKey, setRecentSearches, setLoading, setRefreshing, isReady);
 
   const showSearchResults = query.trim().length > 0;
   const showRecentSearchOverlay = isSearchFocused && query.trim().length === 0;

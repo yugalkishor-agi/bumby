@@ -7,7 +7,7 @@ import { VerifiedBadge } from '../../../components/ui/VerifiedBadge';
 import { colors, spacing } from '../../../styles/theme';
 import { FlashList } from '@shopify/flash-list';
 
-const groupIcon = require('../../../assets/icons/group_icon.png');
+const groupIcon = require('../../../../assets/icons/icons8-group-48.png');
 
 interface StoryViewerModalsProps {
   isOwnStory: boolean;

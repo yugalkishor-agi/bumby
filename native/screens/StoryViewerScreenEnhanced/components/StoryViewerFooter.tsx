@@ -6,7 +6,7 @@ import { Image } from 'expo-image';
 import { Avatar } from '../../../components/ui/Avatar';
 import { colors } from '../../../styles/theme';
 
-const groupIcon = require('../../../assets/icons/group_icon.png');
+const groupIcon = require('../../../../assets/icons/icons8-group-48.png');
 const quickReplyEmoji = ['😂', '😮', '😍', '😢', '👏', '🔥'];
 
 interface StoryViewerFooterProps {
