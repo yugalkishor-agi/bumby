@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { Alert, Keyboard, Platform, Animated, BackHandler } from 'react-native';
-import { storyService } from '../../../services/story.service.clean';
+import { storyService } from '../../../services/story.service';
 import { messageService } from '../../../services/message.service';
 import { useStoryViewerStore } from '../useStoryViewerStore';
 

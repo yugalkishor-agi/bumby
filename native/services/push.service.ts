@@ -153,8 +153,8 @@ function buildNavigationPayload(notificationData: any) {
 
   if (refType === 'post' && refId) {
     return {
-      screen: 'PostViewer',
-      params: { postId: refId, id: refId },
+      screen: 'PostView',
+      params: { postId: refId },
     };
   }
 

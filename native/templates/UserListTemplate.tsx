@@ -3,8 +3,8 @@ import { View, Text, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator 
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
-import { userService } from '../../src/services/user.service';
-import type { User } from '../../src/types/database';
+import { userService } from '../services/user.service';
+import type { User } from '../types/database';
 import { Image } from 'expo-image';
 import { FlashList } from '@shopify/flash-list';
 

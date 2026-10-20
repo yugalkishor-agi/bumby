@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { Alert, Platform } from 'react-native';
-import { storyService } from '../../../services/story.service.clean';
+import { storyService } from '../../../services/story.service';
 import { useStoryViewerStore } from '../useStoryViewerStore';
 
 export function useStoryViewerWidgets(

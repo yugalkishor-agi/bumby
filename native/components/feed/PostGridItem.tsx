@@ -33,7 +33,7 @@ export function PostGridItem({ item, onPress }: PostGridItemProps) {
     if (isGlimpse) {
       (navigation as any).navigate('GlimpseViewer', { glimpseId: itemId });
     } else {
-      (navigation as any).navigate('PostViewer', { id: itemId });
+      (navigation as any).navigate('PostView', { postId: itemId });
     }
   };
 

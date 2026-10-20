@@ -7,7 +7,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { userService } from '../services/user.service';
 import { db } from '../config/firebase';
 import { collection, deleteDoc, doc, getDocs, setDoc, serverTimestamp } from 'firebase/firestore';
-import { storyService } from '../services/story.service.clean';
+import { storyService } from '../services/story.service';
 import { Avatar } from '../components/ui/Avatar';
 import { colors, spacing, typography } from '../styles/theme';
 import { FlashList } from '@shopify/flash-list';

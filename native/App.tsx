@@ -50,7 +50,6 @@ const getNewGroupScreen = () => require('./screens/NewGroupScreen').default;
 const getGroupInfoScreen = () => require('./screens/GroupInfoScreen').default;
 const getGroupChatSettingsScreen = () => require('./screens/GroupChatSettingsScreen').default;
 const getPostViewScreen = () => require('./screens/PostViewScreen').default;
-const getPostViewerScreen = () => require('./screens/PostViewerScreen').default;
 const getCommentsScreen = () => require('./screens/CommentsScreen').default;
 const getLikesListScreenEnhanced = () => require('./screens/LikesListScreenEnhanced').default;
 const getReportScreen = () => require('./screens/ReportScreen').default;
@@ -58,7 +57,7 @@ const getMutualFollowersScreen = () => require('./screens/MutualFollowersScreen'
 const getSharePostScreen = () => require('./screens/SharePostScreen').default;
 const getStoryViewerScreenEnhanced = () => require('./screens/StoryViewerScreenEnhanced').default;
 const getStoryCreateScreen = () => require('./screens/StoryCreateScreen').default;
-const getGlimpseViewerScreen = () => require('./screens/GlimpseViewerScreen').default;
+const getGlimpseViewerScreen = () => require('./screens/GlimpseViewerScreenEnhanced').default;
 const getGlimpseCreateScreen = () => require('./screens/GlimpseCreateScreen').default;
 const getGlimpsesScreen = () => require('./screens/GlimpsesScreen').default;
 const getHighlightsScreen = () => require('./screens/HighlightsScreen').default;
@@ -470,7 +469,6 @@ function AppNavigator() {
           <Stack.Screen name="Search" component={SearchRedirectScreen} />
           {/* Content */}
           <Stack.Screen name="PostView" getComponent={getPostViewScreen} />
-          <Stack.Screen name="PostViewer" getComponent={getPostViewerScreen} />
           <Stack.Screen name="Comments" getComponent={getCommentsScreen} />
           <Stack.Screen name="LikesList" getComponent={getLikesListScreenEnhanced} />
           <Stack.Screen name="Report" getComponent={getReportScreen} />

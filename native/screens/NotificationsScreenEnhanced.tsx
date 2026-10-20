@@ -90,7 +90,7 @@ export default function NotificationsScreenEnhanced() {
       case 'comment':
       case 'mention':
         if (notification.refType === 'post' && notification.refId) {
-          (navigation as any).navigate('PostViewer', { postId: notification.refId });
+          (navigation as any).navigate('PostView', { postId: notification.refId });
           return;
         }
         if (notification.refType === 'glimpse' && notification.refId) {
@@ -122,7 +122,7 @@ export default function NotificationsScreenEnhanced() {
           return;
         }
         if (notification.refId) {
-          (navigation as any).navigate('PostViewer', { postId: notification.refId });
+          (navigation as any).navigate('PostView', { postId: notification.refId });
           return;
         }
         break;

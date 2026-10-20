@@ -79,7 +79,7 @@ export function useProfileGrid(
     return combinedProfileItems;
   }, [activeTab, combinedProfileItems, normalizedGlimpseItems, taggedProfileItems]);
 
-  const navigateToViewer = useCallback((screenName: 'PostViewer' | 'GlimpseViewer', params: Record<string, any>) => {
+  const navigateToViewer = useCallback((screenName: 'PostView' | 'GlimpseViewer', params: Record<string, any>) => {
     const nav: any = navigation as any;
     if (typeof nav?.push === 'function') {
       nav.push(screenName, params);
@@ -118,7 +118,8 @@ export function useProfileGrid(
       : sortPinnedFirst([item, ...sourceItems]);
     const startIndex = Math.max(0, viewerItems.findIndex((entry: any) => String(getItemId(entry)) === String(itemId)));
 
-    navigateToViewer('PostViewer', {
+    navigateToViewer('PostView', {
+      postId: String(itemId),
       id: String(itemId),
       userId: displayUserId,
       items: viewerItems,

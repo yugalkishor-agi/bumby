@@ -84,7 +84,7 @@ export function SharedContentMessage({ sharedContent, message, contextLabel, col
 
   const handlePress = () => {
     if (content.type === 'post') {
-      (navigation as any).navigate('PostViewer', { postId: contentId, id: contentId });
+      (navigation as any).navigate('PostView', { postId: contentId });
       return;
     }
     if (content.type === 'glimpse') {

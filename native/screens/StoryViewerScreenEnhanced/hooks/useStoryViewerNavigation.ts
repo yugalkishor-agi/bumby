@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { storyService } from '../../../services/story.service.clean';
+import { storyService } from '../../../services/story.service';
 import { useStoryViewerStore } from '../useStoryViewerStore';
 
 export function useStoryViewerNavigation(

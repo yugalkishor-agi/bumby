@@ -154,7 +154,7 @@ export default function DiscoveryScreen() {
 
   const openItem = (item: DiscoveryItem) => {
     if (item.type === 'post') {
-      (navigation as any).navigate('PostViewer', { id: item.data.postId || item.id });
+      (navigation as any).navigate('PostView', { postId: item.data.postId || item.id });
       return;
     }
     const glimpseId = item.data.glimpseId || item.data.storyId;
