@@ -151,7 +151,7 @@ export default function MessagesScreenEnhanced() {
     ...(extra || {}),
   }), []);
 
-  const handleConversationPress = (conversation: Conversation) => {
+  const handleConversationPress = useCallback((conversation: Conversation) => {
     try {
       if (!conversation?.conversationId) {
         Alert.alert('Error', 'Unable to open this chat right now.');
@@ -180,12 +180,12 @@ export default function MessagesScreenEnhanced() {
       console.error('Failed to open conversation:', error);
       Alert.alert('Error', 'Unable to open this conversation right now.');
     }
-  };
+  }, [navigation, user?.userId, conversationUsers, buildChatParams, buildGroupChatParams, getConversationParticipantIds]);
 
-  const handleConversationLongPress = (conversation: Conversation) => {
+  const handleConversationLongPress = useCallback((conversation: Conversation) => {
     setActionSheetConversation(conversation);
     setActionSheetVisible(true);
-  };
+  }, []);
 
   const handleActiveUserPress = (activeUser: User) => {
     if (!currentUserId) return;

@@ -2,7 +2,7 @@
 // Purpose: List of conversations with FlashList for performance
 // Extracted from: MessagesScreenEnhanced.tsx — Session 002
 
-import React, { memo } from 'react';
+import React, { memo, useCallback } from 'react';
 import { View, Text, RefreshControl, StyleSheet } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { colors, spacing, typography } from '../../styles/theme';
@@ -22,6 +22,58 @@ interface ConversationListProps {
   typingConvos?: { [conversationId: string]: boolean };
 }
 
+const keyExtractor = (item: Conversation) => item.conversationId;
+
+const renderEmpty = () => (
+  <View style={styles.emptyContainer}>
+    <Text style={styles.emptyText}>No conversations yet</Text>
+    <Text style={styles.emptySubtext}>Start a conversation to see it here</Text>
+  </View>
+);
+
+interface ConversationRowItemProps {
+  conversation: Conversation;
+  conversationUser?: User;
+  currentUserId: string | null;
+  draft?: string;
+  isTyping?: boolean;
+  isOnline?: boolean;
+  onConversationPress: (conversation: Conversation) => void;
+  onConversationLongPress?: (conversation: Conversation) => void;
+}
+
+/**
+ * Memoised per-row shell. The inline press handlers are created here, not in
+ * `renderItem`, so scrolling or updating one conversation only re-renders the
+ * rows whose own primitive props actually changed.
+ */
+const ConversationRowItem = memo(({
+  conversation,
+  conversationUser,
+  currentUserId,
+  draft,
+  isTyping,
+  isOnline,
+  onConversationPress,
+  onConversationLongPress,
+}: ConversationRowItemProps) => (
+  <ConversationRow
+    conversation={conversation}
+    conversationUser={conversationUser}
+    currentUserId={currentUserId}
+    draft={draft}
+    isTyping={isTyping}
+    isOnline={isOnline}
+    activeTab="chats"
+    onPress={() => onConversationPress(conversation)}
+    onLongPress={() => onConversationLongPress?.(conversation)}
+    onAvatarPress={() => onConversationPress(conversation)}
+    onMorePress={() => onConversationLongPress?.(conversation)}
+  />
+));
+
+ConversationRowItem.displayName = 'ConversationRowItem';
+
 const ConversationList = memo(({
   conversations,
   conversationUsers,
@@ -34,41 +86,29 @@ const ConversationList = memo(({
   presenceUsers = {},
   typingConvos = {},
 }: ConversationListProps) => {
-  const renderConversation = ({ item }: { item: Conversation }) => {
+  const renderConversation = useCallback(({ item }: { item: Conversation }) => {
     const otherUser = conversationUsers[item.conversationId];
-    const draft = drafts[item.conversationId];
-    const isTyping = typingConvos[item.conversationId];
     const presence = otherUser?.userId ? presenceUsers[otherUser.userId] : undefined;
 
     return (
-      <ConversationRow
+      <ConversationRowItem
         conversation={item}
         conversationUser={otherUser}
-        currentUserId={currentUserId}
-        draft={draft}
-        isTyping={isTyping}
+        currentUserId={currentUserId ?? null}
+        draft={drafts[item.conversationId]}
+        isTyping={typingConvos[item.conversationId]}
         isOnline={presence?.isOnline}
-        activeTab="chats"
-        onPress={() => onConversationPress(item)}
-        onLongPress={() => onConversationLongPress?.(item)}
-        onAvatarPress={() => onConversationPress(item)}
-        onMorePress={() => onConversationLongPress?.(item)}
+        onConversationPress={onConversationPress}
+        onConversationLongPress={onConversationLongPress}
       />
     );
-  };
-
-  const renderEmpty = () => (
-    <View style={styles.emptyContainer}>
-      <Text style={styles.emptyText}>No conversations yet</Text>
-      <Text style={styles.emptySubtext}>Start a conversation to see it here</Text>
-    </View>
-  );
+  }, [conversationUsers, currentUserId, drafts, typingConvos, presenceUsers, onConversationPress, onConversationLongPress]);
 
   return (
     <FlashList
       data={conversations}
       renderItem={renderConversation}
-      keyExtractor={(item) => item.conversationId}
+      keyExtractor={keyExtractor}
       refreshControl={
         onRefresh ? (
           <RefreshControl

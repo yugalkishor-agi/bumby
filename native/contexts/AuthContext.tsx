@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState, ReactNode } from 'react';
 import { Alert, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as LocalAuthentication from 'expo-local-authentication';
@@ -71,9 +71,30 @@ const stripVolatileUserFields = (user: User | null) => {
   return normalized;
 };
 
+const isSameUserValue = (a: unknown, b: unknown): boolean => {
+  if (a === b) return true;
+  if (a == null || b == null) return false;
+  if (typeof a !== 'object' || typeof b !== 'object') return false;
+  // Nested settings are small and rarely change; stringify only those instead
+  // of the entire user document on every snapshot.
+  try {
+    return JSON.stringify(a) === JSON.stringify(b);
+  } catch {
+    return false;
+  }
+};
+
 const hasMeaningfulUserChange = (previousUser: User | null, nextUser: User) => {
   if (!previousUser) return true;
-  return JSON.stringify(stripVolatileUserFields(previousUser)) !== JSON.stringify(stripVolatileUserFields(nextUser));
+
+  const previous = stripVolatileUserFields(previousUser) as Record<string, unknown>;
+  const next = stripVolatileUserFields(nextUser) as Record<string, unknown>;
+
+  const keys = new Set([...Object.keys(previous), ...Object.keys(next)]);
+  for (const key of keys) {
+    if (!isSameUserValue(previous[key], next[key])) return true;
+  }
+  return false;
 };
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -433,7 +454,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const value: AuthContextType = {
+  // Memoised so consumers don't re-render when the provider re-renders without
+  // an auth-state change. Every function above closes over the same values the
+  // dependency list tracks, so the captured identity stays correct.
+  const value: AuthContextType = useMemo(() => ({
     user,
     loading,
     signIn,
@@ -449,7 +473,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     disableBiometric,
     quickSwitchWithBiometric,
     setOnlineStatus,
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [user, loading, savedAccounts]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

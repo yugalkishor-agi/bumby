@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, ReactNode } from 'react';
 import { Toast, ToastProps } from '../components/ui/Toast';
 
 interface ToastContextType {
@@ -15,43 +15,56 @@ interface ToastProviderProps {
 export function ToastProvider({ children }: ToastProviderProps) {
   const [toast, setToast] = useState<ToastProps | null>(null);
 
-  const showToast = (options: Omit<ToastProps, 'visible' | 'onHide'>) => {
-    setToast((current) => {
-      if (current?.visible) {
-        return {
-          ...current,
-          visible: false,
-          onHide: hideToast,
-        };
-      }
+  const timersRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
+  const generationRef = useRef(0);
 
-      return {
-        ...options,
-        visible: true,
-        onHide: hideToast,
-      };
+  const clearTimers = useCallback(() => {
+    timersRef.current.forEach(clearTimeout);
+    timersRef.current = [];
+  }, []);
+
+  const schedule = useCallback((fn: () => void, ms: number) => {
+    const timer = setTimeout(() => {
+      timersRef.current = timersRef.current.filter((entry) => entry !== timer);
+      fn();
+    }, ms);
+    timersRef.current.push(timer);
+  }, []);
+
+  useEffect(() => clearTimers, [clearTimers]);
+
+  const hideToast = useCallback(() => {
+    const generation = ++generationRef.current;
+    setToast((prev) => (prev ? { ...prev, visible: false } : null));
+    schedule(() => {
+      if (generationRef.current === generation) setToast(null);
+    }, 500);
+  }, [schedule]);
+
+  const showToast = useCallback((options: Omit<ToastProps, 'visible' | 'onHide'>) => {
+    const generation = ++generationRef.current;
+    const next: ToastProps = { ...options, visible: true, onHide: hideToast };
+
+    setToast((current) => {
+      if (!current) return next;
+      // Fade the current toast out first; the replacement is scheduled below so
+      // there is only one state update per visible transition.
+      return { ...current, visible: false, onHide: hideToast };
     });
 
-    setTimeout(() => {
-      setToast({
-        ...options,
-        visible: true,
-        onHide: hideToast,
-      });
-    }, 25);
-  };
+    schedule(() => {
+      // A newer show/hide call won; don't resurrect a stale toast.
+      if (generationRef.current !== generation) return;
+      setToast(next);
+    }, 60);
+  }, [hideToast, schedule]);
 
-  const hideToast = () => {
-    setToast(prev => prev ? { ...prev, visible: false } : null);
-    setTimeout(() => setToast(null), 500);
-  };
+  const contextValue = useMemo(() => ({ showToast, hideToast }), [showToast, hideToast]);
 
-  const contextValue = { showToast, hideToast };
-
-  React.useEffect(() => {
+  useEffect(() => {
     setGlobalToastRef(contextValue);
     return () => setGlobalToastRef(null as any);
-  }, []);
+  }, [contextValue]);
 
   return (
     <ToastContext.Provider value={contextValue}>
