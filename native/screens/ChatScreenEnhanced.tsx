@@ -154,6 +154,7 @@ export default function ChatScreen() {
   const activeActionMessage = useChatScreenStore(s => s.activeActionMessage);
     const setActiveActionMessage = useChatScreenStore(s => s.setActiveActionMessage);
   const seenUsersById = useChatScreenStore(s => s.seenUsersById);
+  const attemptedSeenUserIdsRef = useRef<Set<string>>(new Set());
     const setSeenUsersById = useChatScreenStore(s => s.setSeenUsersById);
   const actionMenuAnchor = useChatScreenStore(s => s.actionMenuAnchor);
     const setActionMenuAnchor = useChatScreenStore(s => s.setActionMenuAnchor);
@@ -598,10 +599,13 @@ export default function ChatScreen() {
       .join('|');
   }, [chatMessages, conversationId, user]);
 
+  const markAsReadRef = useRef(markAsRead);
+  markAsReadRef.current = markAsRead;
+
   useEffect(() => {
     if (!unreadIncomingSignature) return;
-    markAsRead();
-  }, [markAsRead, unreadIncomingSignature]);
+    void markAsReadRef.current();
+  }, [unreadIncomingSignature]);
 
   const handleMentionSelect = useCallback((selectedUser: Pick<User, 'username'>) => {
     const next = messageText.replace(/@[a-zA-Z0-9._]*$/, '@' + selectedUser.username + ' ');
@@ -1148,11 +1152,23 @@ export default function ChatScreen() {
   });
 
   useEffect(() => {
+    attemptedSeenUserIdsRef.current.clear();
+  }, [conversationId]);
+
+  useEffect(() => {
     const readerIds = Array.from(new Set(Object.values(groupSeenReadersByMessageId).flat()));
     if (readerIds.length === 0) return;
 
-    const missingIds = readerIds.filter((id) => id && !seenUsersById[id]).slice(0, 36);
+    // Only try each reader id once per conversation. Without this, ids that no
+    // longer resolve to a user (deleted account, left the group) stay "missing"
+    // forever and the effect re-fetches on every state update, freezing the
+    // chat and eventually the whole JS thread.
+    const missingIds = readerIds
+      .filter((id) => id && !seenUsersById[id] && !attemptedSeenUserIdsRef.current.has(id))
+      .slice(0, 36);
     if (missingIds.length === 0) return;
+
+    missingIds.forEach((id) => attemptedSeenUserIdsRef.current.add(id));
 
     let cancelled = false;
     (async () => {
@@ -1164,17 +1180,17 @@ export default function ChatScreen() {
       const fetchedUsers = remoteIds.length > 0 ? await userService.getUsersByIds(remoteIds) : {};
 
       if (cancelled) return;
-      setSeenUsersById((prev) => ({
-        ...prev,
-        ...fetchedUsers,
-        ...selfEntries,
-      }));
+      setSeenUsersById((prev) => {
+        const next = { ...prev, ...fetchedUsers, ...selfEntries };
+        const changed = Object.keys(next).some((key) => prev[key] !== next[key]);
+        return changed ? next : prev;
+      });
     })().catch(() => undefined);
 
     return () => {
       cancelled = true;
     };
-  }, [groupSeenReadersByMessageId, seenUsersById, user]);
+  }, [groupSeenReadersByMessageId, seenUsersById, user, conversationId]);
 
   const latestMessageId = finalData[finalData.length - 1]?.messageId ?? null;
 

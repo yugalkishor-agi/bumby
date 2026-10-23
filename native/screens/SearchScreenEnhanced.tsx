@@ -1,7 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useCallback, useState, useMemo } from 'react';
 import { View, StyleSheet, TouchableOpacity, Text, ScrollView, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -45,6 +45,15 @@ export default function SearchScreenEnhanced() {
 
   const [searchTab, setSearchTab] = useState<'top' | 'users' | 'tags' | 'posts'>('top');
   const [previewItem, setPreviewItem] = useState<SearchCreatorGlimpse | null>(null);
+
+  // A long-press preview must never outlive the screen. If the user navigates
+  // away (or the gesture is cancelled) while it is open, a transparent Modal
+  // would keep swallowing every touch in the app.
+  useFocusEffect(
+    useCallback(() => {
+      return () => setPreviewItem(null);
+    }, [])
+  );
 
   const {
     recentSearches,
@@ -149,7 +158,7 @@ export default function SearchScreenEnhanced() {
         />
       )}
 
-      <SearchPreviewModal previewItem={previewItem} />
+      <SearchPreviewModal previewItem={previewItem} onDismiss={() => setPreviewItem(null)} />
     </SafeAreaView>
   );
 }

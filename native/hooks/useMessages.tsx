@@ -397,11 +397,6 @@ export const useMessages = (
           } as Message;
         });
         const filtered = applyUserVisibility(latest).reverse();
-        console.log(`[MSG_DEBUG] snapshot docs=${docs.length} filtered=${filtered.length} cutoff=${deletionCutoffRef.current} liveHydrated=${liveHydratedRef.current}`);
-        if (filtered.length < docs.length) {
-          const dropped = latest.filter(m => !filtered.find(f => f.messageId === m.messageId));
-          console.log(`[MSG_DEBUG] dropped messages:`, dropped.map(m => ({ id: m.messageId, createdAt: toMillis(m.createdAt), deletedFor: (m as any).deletedFor })));
-        }
         markDeliveredIfNeeded(latest);
 
         if (!cursorRef.current && docs.length > 0) {
@@ -419,7 +414,6 @@ export const useMessages = (
               ? prev.filter((msg: any) => ['pending', 'pending_offline', 'failed'].includes(String(msg?.status || '')))
               : prev;
             const merged = firstLiveHydration ? mergeMessages(hydrated, pendingLocal) : mergeMessages(prev, hydrated);
-            console.log(`[MSG_DEBUG] setMessages prev=${prev.length} hydrated=${hydrated.length} merged=${merged.length} firstLive=${firstLiveHydration}`);
             // Always return a new array reference on live updates so FlashList
             // re-renders. The equivalence check was preventing render when an
             // optimistic message transitioned to server-confirmed (same key).

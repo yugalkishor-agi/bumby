@@ -9,6 +9,10 @@ import { useColors, ThemeColors } from '../../styles/theme';
 type LockStatus = 'idle' | 'checking' | 'denied';
 
 const RELOAD_THROTTLE_MS = 30 * 1000;
+// The native biometric prompt can hang (sensor unavailable, activity recreated,
+// no device passcode). Without a deadline the full-screen lock would swallow
+// every touch forever, so we always fail open to a retryable state.
+const AUTH_TIMEOUT_MS = 20 * 1000;
 
 /**
  * Gates the app behind the device's own authentication when the user has
@@ -34,6 +38,7 @@ export default function AppLockGate({ children }: { children: React.ReactNode })
   const wasBackgrounded = useRef(false);
   const lastCheckedAt = useRef(0);
   const promptInFlight = useRef(false);
+  const authRunRef = useRef(0);
 
   const loadSettings = useCallback(async () => {
     if (!userId) {
@@ -69,12 +74,26 @@ export default function AppLockGate({ children }: { children: React.ReactNode })
   const authenticate = useCallback(async () => {
     if (promptInFlight.current) return;
     promptInFlight.current = true;
+    const runId = ++authRunRef.current;
     setStatus('checking');
     setMessage('');
 
+    const timeout = setTimeout(() => {
+      if (authRunRef.current !== runId) return;
+      // Invalidate the in-flight run so a late native result cannot unlock or
+      // re-check unexpectedly, then fall back to a retryable state.
+      authRunRef.current += 1;
+      promptInFlight.current = false;
+      setStatus('denied');
+      setMessage('Authentication timed out. Tap Unlock to try again.');
+    }, AUTH_TIMEOUT_MS);
+
     try {
-      const hasHardware = await LocalAuthentication.hasHardwareAsync();
-      const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+      const [hasHardware, isEnrolled] = await Promise.all([
+        LocalAuthentication.hasHardwareAsync(),
+        LocalAuthentication.isEnrolledAsync(),
+      ]);
+      if (authRunRef.current !== runId) return;
 
       if (!hasHardware || !isEnrolled) {
         // Nothing to authenticate against - let the user through rather than
@@ -89,6 +108,7 @@ export default function AppLockGate({ children }: { children: React.ReactNode })
         disableDeviceFallback: requireFaceId.current,
         fallbackLabel: 'Use passcode',
       });
+      if (authRunRef.current !== runId) return;
 
       if (result.success) {
         setStatus('idle');
@@ -104,9 +124,12 @@ export default function AppLockGate({ children }: { children: React.ReactNode })
           : 'Authentication failed'
       );
     } catch (error) {
-      setStatus('idle');
+      if (authRunRef.current === runId) setStatus('idle');
     } finally {
-      promptInFlight.current = false;
+      clearTimeout(timeout);
+      if (authRunRef.current === runId) {
+        promptInFlight.current = false;
+      }
     }
   }, []);
 

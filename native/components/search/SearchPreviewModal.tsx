@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, Modal } from 'react-native';
+import { View, Text, StyleSheet, Modal, Pressable } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { Avatar } from '../ui/Avatar';
 import { VerifiedBadge } from '../ui/VerifiedBadge';
@@ -9,15 +9,30 @@ import { SearchCreatorGlimpse } from '../../hooks/search/searchTypes';
 
 interface SearchPreviewModalProps {
   previewItem: SearchCreatorGlimpse | null;
+  /** Called when the user taps the backdrop or presses Android back. */
+  onDismiss: () => void;
 }
 
-export function SearchPreviewModal({ previewItem }: SearchPreviewModalProps) {
+export function SearchPreviewModal({ previewItem, onDismiss }: SearchPreviewModalProps) {
   if (!previewItem) return null;
 
   return (
-    <Modal visible={true} transparent animationType="fade">
-      <BlurView intensity={24} tint="dark" style={styles.previewOverlay}>
-        <View style={styles.previewCard}>
+    <Modal
+      visible
+      transparent
+      animationType="fade"
+      // Android hardware back must always have an escape hatch; without this
+      // the modal can outlive the long-press that opened it and block touches.
+      onRequestClose={onDismiss}
+    >
+      <Pressable
+        style={styles.previewOverlay}
+        onPress={onDismiss}
+        accessibilityRole="button"
+        accessibilityLabel="Close preview"
+      >
+        <BlurView intensity={24} tint="dark" style={StyleSheet.absoluteFill} pointerEvents="none" />
+        <Pressable style={styles.previewCard} onPress={() => {}}>
           <CachedImage uri={previewItem.previewURL} style={styles.previewImage} resizeMode="cover" />
           <View style={styles.previewShade} />
           <View style={styles.previewHeader}>
@@ -37,11 +52,11 @@ export function SearchPreviewModal({ previewItem }: SearchPreviewModalProps) {
               <Text style={styles.previewCaption} numberOfLines={3}>
                 {previewItem.caption}
               </Text>
-              <Text style={styles.previewHint}>Release to open</Text>
+              <Text style={styles.previewHint}>Tap outside to close</Text>
             </View>
           ) : null}
-        </View>
-      </BlurView>
+        </Pressable>
+      </Pressable>
     </Modal>
   );
 }

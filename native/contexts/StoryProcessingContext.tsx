@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, ReactNode, useRef } from 'react';
+import React, { createContext, useContext, useState, useCallback, ReactNode, useRef, useMemo } from 'react';
 import { Platform } from 'react-native';
 import * as ImageManipulator from 'expo-image-manipulator';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -50,11 +50,20 @@ export function StoryProcessingProvider({ children }: { children: ReactNode }) {
   const runningRef = useRef<boolean>(false);
 
   const updateStoryProgress = useCallback((id: string, progress: number, status?: ProcessingStory['status']) => {
-    setProcessingStories(prev => prev.map(story =>
-      story.id === id
-        ? { ...story, progress, ...(status && { status }) }
-        : story
-    ));
+    setProcessingStories(prev => {
+      const index = prev.findIndex(story => story.id === id);
+      if (index === -1) return prev;
+
+      const current = prev[index];
+      // Transcoders emit progress far faster than the UI can use. Skip ticks
+      // that don't change the displayed percent so the whole app isn't
+      // re-rendered several times per second during an upload.
+      if (!status && Math.round(current.progress) === Math.round(progress)) return prev;
+
+      const next = prev.slice();
+      next[index] = { ...current, progress, ...(status && { status }) };
+      return next;
+    });
   }, []);
 
   const removeProcessingStory = useCallback((id: string) => {
@@ -520,14 +529,22 @@ export function StoryProcessingProvider({ children }: { children: ReactNode }) {
     } catch { }
   }, []);
 
+  const contextValue = useMemo(() => ({
+    processingStories,
+    startStoryProcessing,
+    getProcessingProgress,
+    hasProcessingStories,
+    cancelStoryProcessing
+  }), [
+    processingStories,
+    startStoryProcessing,
+    getProcessingProgress,
+    hasProcessingStories,
+    cancelStoryProcessing,
+  ]);
+
   return (
-    <StoryProcessingContext.Provider value={{
-      processingStories,
-      startStoryProcessing,
-      getProcessingProgress,
-      hasProcessingStories,
-      cancelStoryProcessing
-    }}>
+    <StoryProcessingContext.Provider value={contextValue}>
       {children}
     </StoryProcessingContext.Provider>
   );
