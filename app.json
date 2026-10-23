@@ -1,34 +1,58 @@
 {
   "expo": {
-    "name": "Iris",
-    "slug": "iris-native",
+    "name": "Bumby",
+    "slug": "bumby",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./public/Iris-logo.png",
+    "newArchEnabled": true,
+    "icon": "./assets/Images/bumbylogo.png",
     "jsEngine": "hermes",
     "userInterfaceStyle": "automatic",
     "splash": {
-      "image": "./public/Iris-logo-splesh-screen.png",
+      "image": "./assets/Images/bumbylogo.png",
       "resizeMode": "contain",
-      "backgroundColor": "#0D0D0D"
+      "backgroundColor": "#000000"
     },
     "assetBundlePatterns": [
       "**/*"
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.offcial.social"
+      "bundleIdentifier": "com.offcial.social",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Allow Bumby to use your camera for video calls.",
+        "NSMicrophoneUsageDescription": "Allow Bumby to use your microphone for voice and video calls.",
+        "UIBackgroundModes": [
+          "audio",
+          "voip",
+          "remote-notification"
+        ]
+      }
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./public/Iris-logo.png",
-        "backgroundColor": "#0D0D0D"
+        "foregroundImage": "./assets/Images/bumbylogo.png",
+        "backgroundColor": "#000000"
       },
       "googleServicesFile": "./google-services.json",
       "package": "com.offcial.social",
       "permissions": [
         "CAMERA",
-        "RECORD_AUDIO"
+        "RECORD_AUDIO",
+        "MODIFY_AUDIO_SETTINGS",
+        "SYSTEM_ALERT_WINDOW",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_DATA_SYNC",
+        "FOREGROUND_SERVICE_MICROPHONE",
+        "FOREGROUND_SERVICE_CAMERA",
+        "POST_NOTIFICATIONS",
+        "USE_FULL_SCREEN_INTENT",
+        "MANAGE_OWN_CALLS",
+        "ACCESS_NOTIFICATION_POLICY",
+        "WAKE_LOCK",
+        "VIBRATE",
+        "BLUETOOTH",
+        "BLUETOOTH_CONNECT"
       ]
     },
     "web": {
@@ -37,12 +61,16 @@
     },
     "extra": {
       "eas": {
-        "projectId": "ccf0fc8a-382b-48de-80f6-fd48379e9b64"
+        "projectId": "884a38af-642d-4ee4-bc42-1ce208a78b6a"
       }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
     },
     "plugins": [
       "expo-font",
       "expo-asset",
+      "./plugins/withZegoCallKit",
       [
         "expo-notifications",
         {
@@ -51,7 +79,15 @@
           "sounds": [],
           "mode": "production"
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Bumby to access your photos so you can set a profile picture.",
+          "cameraPermission": "Allow Bumby to use your camera so you can take a profile picture."
+        }
       ]
-    ]
+    ],
+    "owner": "officialcompanynow"
   }
 }

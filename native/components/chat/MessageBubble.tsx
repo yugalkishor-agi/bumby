@@ -22,9 +22,6 @@ type MessageBubbleProps = {
   seenLabel?: string;
   seenReaders?: Array<{ userId: string; avatarURL?: string | null; fallbackText?: string }>; 
   isVisible: boolean;
-  reaction?: string;
-  reactions?: Record<string, string>;
-  reactionUsersById?: Record<string, any | null>;
   isGroupConversation?: boolean;
   otherUserAvatar?: string;
   otherUserId?: string;
@@ -34,15 +31,11 @@ type MessageBubbleProps = {
   formatTime: (ts: any) => string;
   canShowReadReceipts?: boolean;
   onBubbleTap: (msg: any) => void;
-  onReactionPress?: (msg: any, reactions: Record<string, string>) => void;
   onReply?: (msg: any) => void;
-  onPinToggle?: (msg: any) => void;
   onLongPressAction?: (msg: any, anchor?: { x: number; y: number; width: number; height: number; isMe: boolean }) => void;
   onQuickForward?: (msg: any) => void;
-  onEditedPress?: (msg: any) => void;
   onCollaborationAccept?: (msg: any) => void;
   onCollaborationDecline?: (msg: any) => void;
-  isEdited?: boolean;
   stylesRef: ReturnType<typeof StyleSheet.create> | any;
   isFirstInGroup?: boolean;
   isLastInGroup?: boolean;
@@ -74,9 +67,6 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
   seenLabel,
   seenReaders,
   isVisible,
-  reaction,
-  reactions,
-  reactionUsersById,
   isGroupConversation = false,
   otherUserAvatar,
   otherUserId,
@@ -86,14 +76,10 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
   formatTime,
   canShowReadReceipts = true,
   onBubbleTap,
-  onReactionPress,
   onReply,
-  onPinToggle,
   onLongPressAction,
-  onEditedPress,
   onCollaborationAccept,
   onCollaborationDecline,
-  isEdited,
   stylesRef,
   isFirstInGroup = true,
   isLastInGroup = true,
@@ -129,102 +115,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
   const replyDragAnim = useRef(new Animated.Value(0)).current;
   const tapPopAnim = useRef(new Animated.Value(1)).current;
   const longPressTriggeredRef = useRef(false);
-  const reactionScaleAnim = useRef(new Animated.Value(0.78)).current;
-  const reactionOpacityAnim = useRef(new Animated.Value(0)).current;
-  const reactionLiftAnim = useRef(new Animated.Value(6)).current;
-  const previousReactionRef = useRef<string>('');
   const isDeletedMessage = item.isDeleted === true;
-  const resolvedReactions = useMemo(() => {
-    if (reactions && typeof reactions === 'object' && !Array.isArray(reactions)) {
-      return Object.entries(reactions)
-        .filter(([uid, emo]) => !!uid && typeof emo === 'string' && emo.trim().length > 0)
-        .reduce((acc, [uid, emo]) => {
-          acc[uid] = emo;
-          return acc;
-        }, {} as Record<string, string>);
-    }
-
-    if (reaction && reaction.trim().length > 0) {
-      return { __legacy: reaction } as Record<string, string>;
-    }
-
-    return {} as Record<string, string>;
-  }, [reaction, reactions]);
-
-  const reactionSummary = useMemo(() => {
-    const entries = Object.entries(resolvedReactions);
-    const total = entries.length;
-    if (total === 0) {
-      return { total: 0, text: '', map: resolvedReactions };
-    }
-
-    const counts: Record<string, number> = {};
-    entries.forEach(([, emo]) => {
-      counts[emo] = (counts[emo] || 0) + 1;
-    });
-
-    const ordered = Object.entries(counts)
-      .sort((a, b) => b[1] - a[1])
-      .map(([emo]) => emo);
-    const emojiRail = ordered.slice(0, 3).join(' ');
-    const text = total > 1 ? `${emojiRail} ${total}` : emojiRail;
-
-    return { total, text, map: resolvedReactions };
-  }, [resolvedReactions]);
-
-  const reactionBreakdown = useMemo(() => {
-    const entries = Object.entries(resolvedReactions)
-      .filter(([uid, emo]) => !!uid && typeof emo === 'string' && emo.trim().length > 0) as Array<[string, string]>;
-    const byEmoji = new Map<string, string[]>();
-
-    entries.forEach(([uid, emo]) => {
-      const list = byEmoji.get(emo) || [];
-      list.push(uid);
-      byEmoji.set(emo, list);
-    });
-
-    const sortedGroups = Array.from(byEmoji.entries())
-      .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
-
-    return {
-      total: entries.length,
-      groups: sortedGroups,
-      isSingleEmoji: sortedGroups.length === 1,
-      topEmoji: sortedGroups[0]?.[0] || '',
-      topEmojiUserIds: sortedGroups[0]?.[1] || [],
-      topEmojis: sortedGroups.map(([emoji]) => emoji),
-      map: resolvedReactions,
-    };
-  }, [resolvedReactions]);
-
-  const getReactionProfile = useCallback((uid: string) => {
-    const profile = reactionUsersById?.[uid] || null;
-    if (profile) {
-      return {
-        avatarURL: profile.avatarURL || null,
-        label: profile.displayName || profile.username || uid,
-      };
-    }
-
-    if (uid === otherUserId) {
-      return {
-        avatarURL: otherUserAvatar || null,
-        label: otherUserId || uid,
-      };
-    }
-
-    return {
-      avatarURL: null,
-      label: uid,
-    };
-  }, [otherUserAvatar, otherUserId, reactionUsersById]);
-
-  const reactionAnimationKey = useMemo(() => {
-    return Object.entries(resolvedReactions)
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([uid, emo]) => `${uid}:${emo}`)
-      .join('|');
-  }, [resolvedReactions]);
 
   useEffect(() => {
     if (enableEntryAnimation || hasAnimatedRef.current) return;
@@ -249,70 +140,26 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
       Animated.parallel([
         Animated.timing(opacityAnim, {
           toValue: 1,
-          duration: 96,
+          duration: 80,
           easing: Easing.out(Easing.cubic),
           useNativeDriver: true,
         }),
-        Animated.timing(translateYAnim, {
+        Animated.spring(translateYAnim, {
           toValue: 0,
-          duration: 104,
-          easing: Easing.out(Easing.quad),
+          speed: 36,
+          bounciness: 4,
           useNativeDriver: true,
         }),
-        Animated.timing(translateXAnim, {
+        Animated.spring(translateXAnim, {
           toValue: 0,
-          duration: 104,
-          easing: Easing.out(Easing.quad),
+          speed: 36,
+          bounciness: 4,
           useNativeDriver: true,
         }),
       ]).start();
     }
   }, [enableEntryAnimation, isMe, isVisible, opacityAnim, scaleAnim, translateXAnim, translateYAnim]);
 
-
-  useEffect(() => {
-    const previousReaction = previousReactionRef.current;
-    if (reactionSummary.total > 0 && reactionAnimationKey !== previousReaction) {
-      reactionScaleAnim.setValue(0.78);
-      reactionOpacityAnim.setValue(0);
-      reactionLiftAnim.setValue(6);
-      Animated.parallel([
-        Animated.timing(reactionOpacityAnim, {
-          toValue: 1,
-          duration: 110,
-          useNativeDriver: true,
-        }),
-        Animated.sequence([
-          Animated.spring(reactionScaleAnim, {
-            toValue: 1.12,
-            tension: 240,
-            friction: 10,
-            useNativeDriver: true,
-          }),
-          Animated.spring(reactionScaleAnim, {
-            toValue: 1,
-            tension: 190,
-            friction: 11,
-            useNativeDriver: true,
-          }),
-        ]),
-        Animated.spring(reactionLiftAnim, {
-          toValue: 0,
-          tension: 190,
-          friction: 13,
-          useNativeDriver: true,
-        }),
-      ]).start();
-    }
-
-    if (reactionSummary.total === 0) {
-      reactionScaleAnim.setValue(0.78);
-      reactionOpacityAnim.setValue(0);
-      reactionLiftAnim.setValue(6);
-    }
-
-    previousReactionRef.current = reactionAnimationKey;
-  }, [reactionAnimationKey, reactionLiftAnim, reactionOpacityAnim, reactionScaleAnim, reactionSummary.total]);
   const replyMeta = useMemo(() => {
     if (!item.replyTo) return null;
     const source = replySource || {};
@@ -445,6 +292,64 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
 
   if (isGroupActivityMessage) {
     const activityText = normalizedMessageText || String(item.text || '').trim() || 'Group activity';
+
+    // ── Call system messages get a richer pill UI ─────────────────────────
+    const callEvent: string | undefined = (item as any).callEvent;
+    const isCallMessage =
+      item.type === 'system' &&
+      (callEvent != null ||
+        /^(📞|📹|🚫|⏱)/.test(activityText));
+
+    if (isCallMessage) {
+      // Derive event type from callEvent field or emoji prefix
+      const isMissed =
+        callEvent === 'missed' || activityText.startsWith('⏱');
+      const isDeclined =
+        callEvent === 'declined' || activityText.startsWith('🚫');
+      const isEnded =
+        callEvent === 'ended' ||
+        activityText.includes('ended');
+      const isStarted =
+        callEvent === 'started' ||
+        activityText.includes('started');
+      const isVideo =
+        (item as any).callType === 'video' ||
+        activityText.includes('Video') ||
+        activityText.includes('video') ||
+        activityText.includes('📹');
+
+      // Icon & color per event
+      let iconName: any = isVideo ? 'videocam' : 'call';
+      let iconColor = '#4ade80';      // green = active/ended
+      let pillBg = 'rgba(74,222,128,0.12)';
+      if (isMissed || isDeclined) {
+        iconName = isVideo ? 'videocam-off' : 'call';
+        iconColor = '#f87171';        // red = missed/declined
+        pillBg = 'rgba(248,113,113,0.12)';
+      } else if (isStarted) {
+        iconColor = '#60a5fa';        // blue = started
+        pillBg = 'rgba(96,165,250,0.12)';
+      }
+
+      // Strip emoji from display text
+      const cleanText = activityText.replace(/^[📞📹🚫⏱]\s*/, '').trim();
+
+      return (
+        <Animated.View
+          style={[
+            localStyles.groupActivityRow,
+            { opacity: opacityAnim, transform: [{ translateY: translateYAnim }, { scale: scaleAnim }] },
+          ]}
+        >
+          <View style={[localStyles.callPill, { backgroundColor: pillBg }]}>
+            <Ionicons name={iconName} size={13} color={iconColor} style={{ marginRight: 5 }} />
+            <Text style={[localStyles.callPillText, { color: iconColor }]}>{cleanText}</Text>
+          </View>
+        </Animated.View>
+      );
+    }
+
+    // ── Generic system / group-activity message ───────────────────────────
     const activityActorLabel = typeof item.senderUsername === 'string' ? item.senderUsername.trim() : '';
     const activityActorPrefix = activityActorLabel ? activityActorLabel + ' ' : '';
     const canPressActor = !!activityActorLabel && activityText.startsWith(activityActorPrefix) && typeof onSenderPress === 'function';
@@ -484,7 +389,10 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
 
     if (['image', 'video', 'gif', 'sticker'].includes(mediaKind)) {
       if (typeof resolvedUrl !== 'string' || resolvedUrl.trim().length === 0) {
-        return <Text style={[s.messageText, localStyles.messageTextContent, isMe && s.messageTextMe]}>Unsupported media</Text>;
+        // Media bubbles are transparent (the media itself is the background), so
+        // this label sits on the chat backdrop — it must not use the ink that
+        // is tuned for the accent-filled text bubble.
+        return <Text style={[s.messageText, localStyles.messageTextContent]}>Unsupported media</Text>;
       }
       return <MediaBubble url={resolvedUrl} type={mediaKind as any} items={Array.isArray(item.mediaItems) ? item.mediaItems : undefined} isVisible={isVisible} stylesRef={s} senderDisplayName={item.senderUsername || (isMe ? 'You' : 'User')} senderVerified={Boolean(item.senderVerified)} />;
     }
@@ -591,7 +499,13 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
     return (
       <View style={localStyles.messageTextBlock}>
         <Text
-          style={[s.messageText, localStyles.messageTextContent, isMe && s.messageTextMe, isDeletedMessage && s.messageTextDeleted, isPendingMessage && localStyles.pendingMessageText]}
+          style={[
+            s.messageText,
+            localStyles.messageTextContent,
+            isMe ? s.messageTextMe : undefined,
+            isDeletedMessage ? (isMe ? s.messageTextMeDeleted : s.messageTextDeleted) : undefined,
+            isPendingMessage && localStyles.pendingMessageText,
+          ]}
           textBreakStrategy="highQuality"
           numberOfLines={isCollapsedLongMessage ? 6 : undefined}
           ellipsizeMode={isCollapsedLongMessage ? 'tail' : undefined}
@@ -600,7 +514,10 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
             ? 'This message was unsent'
             : hasRenderableText
             ? renderedMessageParts.map((part: { key: string; text: string; mention: boolean }) => (
-                <Text key={part.key} style={part.mention ? localStyles.mentionText : undefined}>
+                <Text
+                  key={part.key}
+                  style={part.mention ? (isMe ? s.messageTextMeMention : localStyles.mentionText) : undefined}
+                >
                   {part.text}
                 </Text>
               ))
@@ -620,7 +537,10 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
   };
   const renderStatusIcon = () => {
     if (item.status === 'failed') return <Ionicons name="alert-circle" size={14} color="#ef4444" style={s.readIcon} />;
-    if (item.status === 'pending' || item.status === 'pending_offline') return <Ionicons name="time" size={14} color="#9ca3af" style={s.readIcon} />;
+    if (item.status === 'pending' || item.status === 'pending_offline') {
+      const tint = isMe ? s.messageStatusIconMe?.color : undefined;
+      return <Ionicons name="time" size={14} color={tint || '#9ca3af'} style={s.readIcon} />;
+    }
     return null;
   };
 
@@ -677,9 +597,9 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
   const resetReplyDrag = () => {
     Animated.spring(replyDragAnim, {
       toValue: 0,
-      damping: 15,
-      stiffness: 220,
-      mass: 0.78,
+      damping: 18,
+      stiffness: 260,
+      mass: 0.7,
       useNativeDriver: true,
     }).start();
   };
@@ -722,9 +642,9 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
     longPressTriggeredRef.current = true;
     Animated.spring(tapPopAnim, {
       toValue: LONG_PRESS_SCALE,
-      damping: 18,
-      stiffness: 260,
-      mass: 0.8,
+      damping: 22,
+      stiffness: 320,
+      mass: 0.7,
       useNativeDriver: true,
     }).start();
     triggerSwipeHaptic();
@@ -746,9 +666,9 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
     onBubbleTouchStateChange?.(true);
     Animated.spring(tapPopAnim, {
       toValue: PRESS_IN_SCALE,
-      damping: 20,
-      stiffness: 290,
-      mass: 0.74,
+      damping: 24,
+      stiffness: 340,
+      mass: 0.65,
       useNativeDriver: true,
     }).start();
   };
@@ -762,9 +682,9 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
     }
     Animated.spring(tapPopAnim, {
       toValue: 1,
-      damping: 16,
-      stiffness: 230,
-      mass: 0.8,
+      damping: 20,
+      stiffness: 300,
+      mass: 0.7,
       useNativeDriver: true,
     }).start();
   };
@@ -777,12 +697,6 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
     onBubbleTap(item);
   };
     const statusIcon = renderStatusIcon();
-  const sameEmojiAvatarIds = reactionBreakdown.isSingleEmoji ? reactionBreakdown.topEmojiUserIds.slice(0, 2) : [];
-  const sameEmojiExtraCount = reactionBreakdown.isSingleEmoji ? Math.max(0, reactionBreakdown.topEmojiUserIds.length - sameEmojiAvatarIds.length) : 0;
-  const mixedEmojiRail = !reactionBreakdown.isSingleEmoji ? reactionBreakdown.topEmojis.slice(0, 2) : [];
-  const mixedCountLabel = !reactionBreakdown.isSingleEmoji
-    ? (reactionBreakdown.total > 2 ? `+${reactionBreakdown.total - 2}` : reactionBreakdown.total > 1 ? String(reactionBreakdown.total) : '')
-    : '';
   const bubbleBody = (
     <View ref={bubbleMeasureRef} collapsable={false}>
       <Animated.View style={{ opacity: opacityAnim, transform: [{ translateX: translateXAnim }, { translateY: translateYAnim }, { scale: scaleAnim }] }}>
@@ -824,7 +738,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
             onPressIn={handlePressIn}
             onPressOut={handlePressOut}
             onLongPress={handleLongPress}
-            delayLongPress={220}
+            delayLongPress={180}
             style={[
               s.messageBubble,
               isStickerOrGif || isSharedBubble
@@ -894,72 +808,6 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
             )
           ) : null}
 
-          {isEdited && (
-            <TouchableOpacity style={s.editedLabelWrap} onPress={() => onEditedPress?.(item)}>
-              <Text style={s.editedLabel}>edited</Text>
-            </TouchableOpacity>
-          )}
-
-                    {reactionSummary.total > 0 ? (
-            <Animated.View
-              style={[
-                s.reactionBadge,
-                isMe ? s.reactionBadgeRight : s.reactionBadgeLeft,
-                localStyles.reactionBadgeTransparent,
-                {
-                  opacity: reactionOpacityAnim,
-                  transform: [{ translateY: reactionLiftAnim }, { scale: reactionScaleAnim }],
-                },
-              ]}
-            >
-              <TouchableOpacity
-                activeOpacity={0.9}
-                style={localStyles.reactionTapWrap}
-                onPress={() => onReactionPress?.(item, reactionSummary.map)}
-              >
-                {isGroupConversation && reactionBreakdown.isSingleEmoji ? (
-                  <View style={localStyles.reactionClusterPill}>
-                    <Text style={localStyles.reactionEmojiPlain}>{reactionBreakdown.topEmoji}</Text>
-                    <View style={localStyles.reactionAvatarStack}>
-                      {sameEmojiAvatarIds.map((uid, index) => {
-                        const profile = getReactionProfile(uid);
-                        return (
-                          <Avatar
-                            key={`${uid}-${index}`}
-                            source={profile.avatarURL}
-                            size={16}
-                            fallbackText={profile.label}
-                            fallbackStyle={localStyles.reactionAvatarFallbackTransparent}
-                            style={index > 0 ? localStyles.reactionAvatarMiniWithOverlap : localStyles.reactionAvatarMini}
-                          />
-                        );
-                      })}
-                    </View>
-                    {sameEmojiExtraCount > 0 ? <Text style={localStyles.reactionCountText}>+{sameEmojiExtraCount}</Text> : null}
-                  </View>
-                ) : isGroupConversation ? (
-                  <View style={localStyles.reactionClusterPill}>
-                    <View style={localStyles.reactionEmojiRail}>
-                      {mixedEmojiRail.map((emoji, index) => (
-                        <Text key={`${emoji}-${index}`} style={[localStyles.reactionEmojiPlain, index > 0 && localStyles.reactionEmojiOffset]}>{emoji}</Text>
-                      ))}
-                    </View>
-                    {mixedCountLabel ? <Text style={localStyles.reactionCountText}>{mixedCountLabel}</Text> : null}
-                  </View>
-                ) : (
-                  <View style={localStyles.reactionClusterPill}>
-                    <Text style={localStyles.reactionTextDark}>{reactionSummary.text}</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            </Animated.View>
-          ) : null}
-
-          {item.pinned && (
-            <TouchableOpacity style={s.pinBadge} onPress={() => onPinToggle?.(item)}>
-              <Ionicons name="bookmark" size={14} color="#38bdf8" />
-            </TouchableOpacity>
-          )}
           </TouchableOpacity>
         </Animated.View>
       </Animated.View>
@@ -1068,15 +916,6 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
 const readBySignature = (value: any): string =>
   Array.isArray(value) ? value.filter(Boolean).join('|') : '';
 
-const reactionsSignature = (value: Record<string, string> | undefined): string => {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return '';
-  return Object.entries(value)
-    .filter(([uid, emoji]) => !!uid && typeof emoji === 'string' && emoji.trim().length > 0)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([uid, emoji]) => `${uid}:${emoji}`)
-    .join('|');
-};
-
 const toMillis = (timestamp: any): number => {
   if (!timestamp) return 0;
   if (typeof timestamp?.toMillis === 'function') return timestamp.toMillis();
@@ -1103,11 +942,9 @@ const messageRenderSignature = (item: any): string => {
     String(item?.replyTo?.messageId || ''),
     String(item?.replyTo?.text || ''),
     readBySignature(item?.readBy),
-    reactionsSignature(item?.reactions),
     trimmedText,
     String(toMillis(item?.createdAt) || 0),
     String(toMillis(item?.updatedAt) || 0),
-    item?.pinned ? '1' : '0',
   ].join('::');
 };
 
@@ -1133,17 +970,10 @@ const seenReadersSignature = (readers: Array<{ userId: string; avatarURL?: strin
     .join('|');
 };
 
-const profileSignature = (profile: any): string => {
-  if (!profile) return '';
-  return `${String(profile?.avatarURL || '')}:${String(profile?.displayName || '')}:${String(profile?.username || '')}`;
-};
-
 const areMessageBubblePropsEqual = (prev: MessageBubbleProps, next: MessageBubbleProps): boolean => {
   if (prev.item?.messageId !== next.item?.messageId) return false;
   if (messageRenderSignature(prev.item) !== messageRenderSignature(next.item)) return false;
   if (replySourceSignature(prev.replySource) !== replySourceSignature(next.replySource)) return false;
-  if (prev.reaction !== next.reaction) return false;
-  if (reactionsSignature(prev.reactions) !== reactionsSignature(next.reactions)) return false;
   if (seenReadersSignature(prev.seenReaders) !== seenReadersSignature(next.seenReaders)) return false;
 
   if (prev.isMe !== next.isMe) return false;
@@ -1157,7 +987,6 @@ const areMessageBubblePropsEqual = (prev: MessageBubbleProps, next: MessageBubbl
   if (prev.showSenderAvatar !== next.showSenderAvatar) return false;
   if (prev.senderLabel !== next.senderLabel) return false;
   if (prev.canShowReadReceipts !== next.canShowReadReceipts) return false;
-  if (prev.isEdited !== next.isEdited) return false;
   if (prev.isFirstInGroup !== next.isFirstInGroup) return false;
   if (prev.isLastInGroup !== next.isLastInGroup) return false;
   if (prev.accentColor !== next.accentColor) return false;
@@ -1167,17 +996,6 @@ const areMessageBubblePropsEqual = (prev: MessageBubbleProps, next: MessageBubbl
   if (prev.enableReplySwipe !== next.enableReplySwipe) return false;
   if (prev.enableEntryAnimation !== next.enableEntryAnimation) return false;
   if (prev.stylesRef !== next.stylesRef) return false;
-
-  const ids = new Set<string>([
-    ...Object.keys(prev.reactions || {}),
-    ...Object.keys(next.reactions || {}),
-  ]);
-  for (const uid of ids) {
-    if (!uid) continue;
-    if (profileSignature(prev.reactionUsersById?.[uid]) !== profileSignature(next.reactionUsersById?.[uid])) {
-      return false;
-    }
-  }
 
   return true;
 };
@@ -1200,6 +1018,19 @@ const localStyles = StyleSheet.create({
     backgroundColor: 'rgba(10, 19, 36, 0.68)',
     borderWidth: 1,
     borderColor: 'rgba(148, 163, 184, 0.18)',
+  },
+  callPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.15)',
+  },
+  callPillText: {
+    fontSize: 12,
+    fontWeight: '500',
   },
   groupActivityText: {
     textAlign: 'center',
@@ -1310,7 +1141,7 @@ const localStyles = StyleSheet.create({
     opacity: 0.72,
   },
   pendingMessageText: {
-    color: 'rgba(226, 232, 240, 0.86)',
+    opacity: 0.82,
   },
   mentionText: {
     color: '#f5d0fe',
@@ -1355,76 +1186,6 @@ const localStyles = StyleSheet.create({
     fontSize: 11,
     lineHeight: 14,
     textShadowRadius: 2,
-  },
-  reactionBadgeTransparent: {
-    backgroundColor: 'transparent',
-    borderColor: 'transparent',
-    paddingHorizontal: 0,
-    paddingVertical: 0,
-    shadowOpacity: 0,
-    shadowRadius: 0,
-    elevation: 0,
-  },
-  reactionTapWrap: {
-    borderRadius: 14,
-    paddingHorizontal: 1,
-    paddingVertical: 1,
-  },
-  reactionClusterPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    minHeight: 22,
-    paddingHorizontal: 4,
-    paddingVertical: 0,
-    borderRadius: 14,
-    backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  reactionEmojiRail: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  reactionEmojiPlain: {
-    fontSize: 15,
-    lineHeight: 17,
-    color: '#f8fafc',
-    backgroundColor: 'transparent',
-  },
-  reactionEmojiOffset: {
-    marginLeft: 4,
-  },
-  reactionAvatarStack: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginLeft: 4,
-  },
-  reactionAvatarMini: {
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  reactionAvatarFallbackTransparent: {
-    backgroundColor: 'transparent',
-  },
-  reactionAvatarMiniOverlap: {
-    marginLeft: -5,
-  },
-  reactionAvatarMiniWithOverlap: {
-    borderWidth: 1,
-    borderColor: 'transparent',
-    marginLeft: -4,
-  },
-  reactionCountText: {
-    marginLeft: 5,
-    fontSize: 11,
-    lineHeight: 13,
-    fontWeight: '700',
-    color: 'rgba(226, 232, 240, 0.88)',
-  },
-  reactionTextDark: {
-    fontSize: 13,
-    color: '#e2e8f0',
-    fontWeight: '700',
   },
   seenReadersRow: {
     marginTop: 8,

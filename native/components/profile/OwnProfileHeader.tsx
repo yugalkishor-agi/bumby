@@ -1,20 +1,19 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
-  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Avatar } from '../ui/Avatar';
 import { VerifiedBadge } from '../ui/VerifiedBadge';
 import { ProfileBannerEditor } from './ProfileBannerEditor';
+import { ProfileBio, getProfilePostCount } from './ProfileBio';
+import { ProfileWebsiteLink } from './ProfileWebsiteLink';
 import { colors, spacing, typography, borderRadius } from '../../styles/theme';
-
-const { width } = Dimensions.get('window');
 
 interface OwnProfileHeaderProps {
   profileUser: any;
@@ -43,11 +42,8 @@ export function OwnProfileHeader({
   onShare,
   onOpenAboutAccount,
 }: OwnProfileHeaderProps) {
-  const [isBioExpanded, setIsBioExpanded] = useState(false);
-  const [canToggleBio, setCanToggleBio] = useState(false);
-  const totalPosts = userPosts.length + userGlimpses.length;
-  const bioWordCount = typeof profileUser?.bio === 'string' ? profileUser.bio.trim().split(/\s+/).filter(Boolean).length : 0;
-  const shouldShowBioToggle = canToggleBio || bioWordCount > 14;
+  const totalPosts = getProfilePostCount(profileUser, userPosts.length, userGlimpses.length);
+  const isVerified = !!(profileUser?.verified || profileUser?.isVerified);
 
   // If profileUser is not available, show loading
   if (!profileUser) {
@@ -131,41 +127,14 @@ export function OwnProfileHeader({
 
         <TouchableOpacity style={styles.usernameRow} activeOpacity={0.75} onPress={onOpenAboutAccount} disabled={!onOpenAboutAccount}>
           <Text style={styles.username}>@{profileUser.username}</Text>
-          {profileUser.verified ? (
-            <VerifiedBadge size={20} style={styles.verifiedBadge} interactive />
+          {isVerified ? (
+            <VerifiedBadge size={20} style={styles.verifiedBadge} />
           ) : null}
         </TouchableOpacity>
         
-        {profileUser.bio ? (
-          <View style={styles.bioBlock}>
-            <Text
-              style={styles.bio}
-              numberOfLines={isBioExpanded ? undefined : 3}
-              onTextLayout={(event) => {
-                if (!canToggleBio && event.nativeEvent.lines.length > 3) {
-                  setCanToggleBio(true);
-                }
-              }}
-            >
-              {profileUser.bio}
-            </Text>
-            {shouldShowBioToggle ? (
-              <TouchableOpacity
-                activeOpacity={0.7}
-                onPress={() => setIsBioExpanded((current) => !current)}
-              >
-                <Text style={styles.bioToggle}>{isBioExpanded ? 'less' : 'more'}</Text>
-              </TouchableOpacity>
-            ) : null}
-          </View>
-        ) : null}
+        <ProfileBio bio={profileUser.bio} />
         
-        {profileUser.website && (
-          <TouchableOpacity style={styles.websiteContainer}>
-            <Ionicons name="link" size={16} color={colors.accent.primary} />
-            <Text style={styles.website}>{profileUser.website}</Text>
-          </TouchableOpacity>
-        )}
+        <ProfileWebsiteLink website={profileUser.website} />
       </View>
 
       {/* Action Buttons */}
@@ -350,35 +319,6 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.base,
     color: colors.text.secondary,
     flexShrink: 1,
-  },
-  bio: {
-    fontSize: typography.fontSize.base,
-    color: colors.text.primary,
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-  bioBlock: {
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
-  bioToggle: {
-    marginTop: spacing.xs,
-    fontSize: typography.fontSize.sm,
-    color: '#94A3B8',
-    fontWeight: typography.fontWeight.medium as any,
-  },
-  websiteContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.background.secondary,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.full,
-  },
-  website: {
-    fontSize: typography.fontSize.sm,
-    color: colors.accent.primary,
-    marginLeft: spacing.xs,
   },
   actionSection: {
     flexDirection: 'row',

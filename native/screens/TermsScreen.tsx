@@ -37,22 +37,22 @@ const TermsScreenComponent = createStaticContentScreen({
       
       <Text style={styles.section}>1. Acceptance of Terms</Text>
       <Text style={styles.paragraph}>
-        By accessing and using Iris, you accept and agree to be bound by the terms and provision of this agreement.
+        By accessing and using Bumby, you accept and agree to be bound by the terms and provision of this agreement.
       </Text>
 
       <Text style={styles.section}>2. Use License</Text>
       <Text style={styles.paragraph}>
-        Permission is granted to temporarily download one copy of Iris for personal, non-commercial transitory viewing only.
+        Permission is granted to temporarily download one copy of Bumby for personal, non-commercial transitory viewing only.
       </Text>
 
       <Text style={styles.section}>3. User Content</Text>
       <Text style={styles.paragraph}>
-        You retain all rights to the content you post on Iris. By posting content, you grant us a worldwide, non-exclusive, royalty-free license to use, copy, reproduce, process, adapt, modify, publish, transmit, display and distribute such content.
+        You retain all rights to the content you post on Bumby. By posting content, you grant us a worldwide, non-exclusive, royalty-free license to use, copy, reproduce, process, adapt, modify, publish, transmit, display and distribute such content.
       </Text>
 
       <Text style={styles.section}>4. Prohibited Uses</Text>
       <Text style={styles.paragraph}>
-        You may not use Iris to:{'\n'}
+        You may not use Bumby to:{'\n'}
         • Violate any laws or regulations{'\n'}
         • Infringe on intellectual property rights{'\n'}
         • Transmit harmful or malicious code{'\n'}
@@ -71,7 +71,7 @@ const TermsScreenComponent = createStaticContentScreen({
 
       <Text style={styles.section}>7. Contact</Text>
       <Text style={styles.paragraph}>
-        For questions about these Terms, please contact us at support@iris.app
+        For questions about these Terms, please contact us at support@bumby.app
       </Text>
     </View>
   ),

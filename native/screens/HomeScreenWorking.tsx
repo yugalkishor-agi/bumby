@@ -18,7 +18,6 @@ import { StoryRing } from '../components/feed/StoryRing';
 import { LoadingSkeleton, PostSkeleton } from '../components/ui/LoadingSkeleton';
 import { useAuth } from '../contexts/AuthContext';
 import { useStoryProcessing } from '../contexts/StoryProcessingContext';
-import { feedAudioService } from '../services/feedAudio.service';
 import { buildHomeBootstrapCacheKey } from '../services/appWarmup.service';
 import { feedRankingService } from '../services/feedRanking.service';
 import { useHomeScreenWorkingStore } from "./HomeScreenWorking/useHomeScreenWorkingStore";
@@ -28,7 +27,6 @@ import { useHomeBootstrapCache } from './HomeScreenWorking/useHomeBootstrapCache
 import { useHomeBadges } from './HomeScreenWorking/useHomeBadges';
 import { useHomeFeed } from './HomeScreenWorking/useHomeFeed';
 import { useHomeFeedActions } from './HomeScreenWorking/useHomeFeedActions';
-import { useHomeFeedAudio } from './HomeScreenWorking/useHomeFeedAudio';
 import { useHomeFeedControls } from './HomeScreenWorking/useHomeFeedControls';
 import { useHomeFeedHydration } from './HomeScreenWorking/useHomeFeedHydration';
 import { useHomeInitialData } from './HomeScreenWorking/useHomeInitialData';
@@ -64,10 +62,6 @@ export default function HomeScreenWorking() {
     const setUnreadNotifications = useHomeScreenWorkingStore(s => s.setUnreadNotifications);
   const unreadMessages = useHomeScreenWorkingStore(s => s.unreadMessages);
     const setUnreadMessages = useHomeScreenWorkingStore(s => s.setUnreadMessages);
-  const activeMusicPostId = useHomeScreenWorkingStore(s => s.activeMusicPostId);
-    const setActiveMusicPostId = useHomeScreenWorkingStore(s => s.setActiveMusicPostId);
-  const mutedMusicPostIds = useHomeScreenWorkingStore(s => s.mutedMusicPostIds);
-    const setMutedMusicPostIds = useHomeScreenWorkingStore(s => s.setMutedMusicPostIds);
   const isFocused = useIsFocused();
   const [isReady, setIsReady] = useState(false);
   const messageWiggle = useRef(new Animated.Value(0)).current;
@@ -84,11 +78,7 @@ export default function HomeScreenWorking() {
     const setFeedControls = useHomeScreenWorkingStore(s => s.setFeedControls);
   const viewerRegion = useHomeScreenWorkingStore(s => s.viewerRegion);
     const setViewerRegion = useHomeScreenWorkingStore(s => s.setViewerRegion);
-  const visibleMusicPostIdsRef = useRef<Set<string>>(new Set());
   const postLayoutsRef = useRef<Record<string, { y: number; height: number }>>({});
-  const scrollOffsetYRef = useRef(0);
-  const activeMusicPostIdRef = useRef<string | null>(null);
-  const selectionFrameRef = useRef<number | null>(null);
   const currentUserIdRef = useRef<string | null>(currentUserId);
   const lastFeedSignalRef = useRef<{ postId: string; at: number }>({ postId: '', at: 0 });
   const storiesRef = useRef<Story[]>(stories);
@@ -115,19 +105,6 @@ export default function HomeScreenWorking() {
     currentUserId,
     isFocused,
     setFeedControls,
-  });
-  const { scheduleRecomputeActiveMusicPost, toggleMusicMuteForPost } = useHomeFeedAudio({
-    posts,
-    isFocused,
-    screenHeight,
-    activeMusicPostId,
-    mutedMusicPostIds,
-    visibleMusicPostIdsRef,
-    postLayoutsRef,
-    scrollOffsetYRef,
-    activeMusicPostIdRef,
-    setActiveMusicPostId,
-    setMutedMusicPostIds,
   });
   const { hydrateLikedByPreview, hydrateFeedLikedState } = useHomeFeedHydration({
     currentUserId,
@@ -174,18 +151,13 @@ export default function HomeScreenWorking() {
 
   const onViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: any[] }) => {
-      const visibleWithMusic: Post[] = [];
       let primaryVisiblePost: Post | undefined;
       let minIndex = Number.MAX_SAFE_INTEGER;
 
       for (const entry of viewableItems) {
         if (entry?.isViewable !== false && entry?.item) {
           const post = entry.item as Post;
-          
-          if (post.backgroundMusic?.streamURL) {
-            visibleWithMusic.push(post);
-          }
-          
+
           const index = entry.index ?? Number.MAX_SAFE_INTEGER;
           if (index < minIndex && post.postId && post.userId) {
             minIndex = index;
@@ -193,26 +165,6 @@ export default function HomeScreenWorking() {
           }
         }
       }
-
-      // Sort visible with music to ensure deterministic preloading order
-      visibleWithMusic.sort((a, b) => {
-        const indexA = viewableItems.find(e => e.item?.postId === a.postId)?.index ?? Number.MAX_SAFE_INTEGER;
-        const indexB = viewableItems.find(e => e.item?.postId === b.postId)?.index ?? Number.MAX_SAFE_INTEGER;
-        return indexA - indexB;
-      });
-
-      visibleMusicPostIdsRef.current = new Set(visibleWithMusic.map((entry) => entry.postId));
-
-      if (activeMusicPostIdRef.current && !visibleMusicPostIdsRef.current.has(activeMusicPostIdRef.current)) {
-        activeMusicPostIdRef.current = null;
-        setActiveMusicPostId(null);
-      }
-
-      visibleWithMusic.slice(0, 3).forEach((entry) => {
-        if (entry?.backgroundMusic?.streamURL) {
-          void feedAudioService.preload(entry.backgroundMusic.streamURL);
-        }
-      });
 
       const activeUserId = currentUserIdRef.current;
       if (activeUserId && primaryVisiblePost?.postId) {
@@ -233,10 +185,6 @@ export default function HomeScreenWorking() {
     });
     return () => task.cancel();
   }, []);
-
-  useEffect(() => {
-    activeMusicPostIdRef.current = activeMusicPostId;
-  }, [activeMusicPostId]);
 
   useEffect(() => {
     currentUserIdRef.current = currentUserId;
@@ -328,31 +276,6 @@ export default function HomeScreenWorking() {
     if (!isFocused || !currentUserId) return;
     // Intentionally skip full feed reload on tab focus to keep scroll/feed stable.
   }, [currentUserId, isFocused]);
-
-  useEffect(() => {
-    if (isFocused) return;
-    activeMusicPostIdRef.current = null;
-    setActiveMusicPostId(null);
-  }, [isFocused]);
-
-  useEffect(() => {
-    posts
-      .filter((post) => !!post.backgroundMusic?.streamURL)
-      .slice(0, 4)
-      .forEach((post) => {
-        if (post.backgroundMusic?.streamURL) {
-          void feedAudioService.preload(post.backgroundMusic.streamURL);
-        }
-      });
-  }, [posts]);
-
-  useEffect(() => {
-    return () => {
-      if (selectionFrameRef.current != null) {
-        cancelAnimationFrame(selectionFrameRef.current);
-      }
-    };
-  }, [mutateBaseFeedPosts]);
 
   useEffect(() => {
     wiggleRef.current?.stop();
@@ -469,24 +392,19 @@ export default function HomeScreenWorking() {
   const handlePostLayout = useCallback((event: any, postId: string) => {
     const { y, height } = event.nativeEvent.layout;
     postLayoutsRef.current[postId] = { y, height };
-    scheduleRecomputeActiveMusicPost();
-  }, [scheduleRecomputeActiveMusicPost]);
+  }, []);
 
-  // Render post item — music state is subscribed per-item inside FeedPostItem so
-  // that active-post transitions don't invalidate renderItem and re-reconcile the
-  // entire list. Keep deps limited to values that are stable during scroll.
+  // Render post item — keep deps limited to values that are stable during scroll.
   const renderPostItem = useCallback(({ item }: { item: any }) => (
     <FeedPostItem
       item={item}
-      isFocused={isFocused}
       onLayout={handlePostLayout}
       onLike={handleLikePress}
       onSaveChange={handleSavePress}
       onShare={handleShare}
       onHide={handleHide}
-      onToggleMusicMute={toggleMusicMuteForPost}
     />
-  ), [isFocused, handlePostLayout, handleLikePress, handleSavePress, handleShare, handleHide, toggleMusicMuteForPost]);
+  ), [handlePostLayout, handleLikePress, handleSavePress, handleShare, handleHide]);
 
   const storiesWithCreate = useMemo(() => {
     return [{ storyId: 'create', userId: user?.userId || '' }, ...stories];
@@ -570,11 +488,6 @@ export default function HomeScreenWorking() {
         onViewableItemsChanged={onViewableItemsChanged.current}
         viewabilityConfig={viewabilityConfigRef.current}
         estimatedItemSize={600}
-        onScroll={(event) => {
-          scrollOffsetYRef.current = event.nativeEvent.contentOffset.y;
-          scheduleRecomputeActiveMusicPost();
-        }}
-        scrollEventThrottle={16}
         drawDistance={screenHeight * 1.4}
       />
     </SafeAreaView>

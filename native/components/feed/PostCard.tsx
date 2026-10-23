@@ -9,7 +9,6 @@ import {
   Modal,
   ActivityIndicator,
   Alert,
-  Platform,
 } from 'react-native';
 import {
   Bookmark,
@@ -18,14 +17,10 @@ import {
   Heart,
   MapPin,
   MessageCircle,
-  Music4,
   MoreHorizontal,
   Send,
   UserMinus,
-  Volume2,
-  VolumeX,
 } from 'lucide-react-native';
-import { Audio } from 'expo-av';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { VerifiedBadge } from '../ui/VerifiedBadge';
@@ -71,11 +66,6 @@ interface PostCardProps {
   isSaved?: boolean;
   showMenuButton?: boolean;
   variant?: PostCardVariant;
-  enableMusicAutoplay?: boolean;
-  isMusicActive?: boolean;
-  useExternalMusicControl?: boolean;
-  musicMuted?: boolean;
-  onToggleMusicMute?: (postId: string) => void;
   likedByPreview?: Array<{
     userId: string;
     username?: string;
@@ -85,15 +75,6 @@ interface PostCardProps {
 
   latestCommentText?: string;
   latestCommentUser?: string;
-  backgroundMusic?: {
-    trackId?: string;
-    trackTitle?: string;
-    artistName?: string;
-    coverArtURL?: string;
-    streamURL?: string;
-    clipStart?: number;
-    clipEnd?: number;
-  } | null;
   taggedUsers?: Array<{
     userId: string;
     username?: string;
@@ -144,19 +125,6 @@ const formatPostDate = (value: any) => {
   return pretty || formatTime(value);
 };
 
-let audioModeConfigured = false;
-const ensurePlaybackAudioMode = async () => {
-  if (audioModeConfigured) return;
-  await Audio.setAudioModeAsync({
-    allowsRecordingIOS: false,
-    playsInSilentModeIOS: true,
-    shouldDuckAndroid: true,
-    playThroughEarpieceAndroid: false,
-    staysActiveInBackground: false,
-  });
-  audioModeConfigured = true;
-};
-
 const clampAspectRatio = (value?: number | null) => {
   if (!value || !Number.isFinite(value)) return 1;
   return Math.max(0.6, Math.min(2.2, value));
@@ -184,16 +152,10 @@ const PostCardComponent = ({
   isSaved,
   showMenuButton = true,
   variant = 'feed',
-  enableMusicAutoplay = false,
-  isMusicActive = true,
-  useExternalMusicControl = false,
-  musicMuted = false,
-  onToggleMusicMute,
   likedByPreview = [],
 
   latestCommentText,
   latestCommentUser,
-  backgroundMusic,
   taggedUsers = [],
   collaborators = [],
   onLike,
@@ -216,12 +178,13 @@ const PostCardComponent = ({
   const [isCaptionExpanded, setIsCaptionExpanded] = useState(false);
   const [captionCanExpand, setCaptionCanExpand] = useState(false);
   const [resolvedAspectRatio, setResolvedAspectRatio] = useState(() => clampAspectRatio(mediaAspectRatio));
-  const [internalMusicMuted, setInternalMusicMuted] = useState(false);
-  const localMusicSoundRef = useRef<Audio.Sound | null>(null);
   const lastTap = useRef<number>(0);
   const likeAnimation = useRef(new Animated.Value(1)).current;
   const saveAnimation = useRef(new Animated.Value(1)).current;
   const doubleTapHeart = useRef(new Animated.Value(0)).current;
+  const doubleTapHeartScale = useRef(new Animated.Value(0.6)).current;
+  const doubleTapRing = useRef(new Animated.Value(0)).current;
+  const doubleTapAnimating = useRef(false);
 
   const acceptedCollaborators = useMemo(
     () => (collaborators || []).filter((collab) => collab?.userId && collab.status === 'accepted'),
@@ -234,19 +197,8 @@ const PostCardComponent = ({
     : '';
   const showCollaboratorHandle = !!displayCollaborator && acceptedCollaborators.length === 1;
   const showCollaboratorCount = acceptedCollaborators.length > 1;
-  const musicLabel = useMemo(() => {
-    if (!backgroundMusic?.trackTitle) return '';
-    const artist = backgroundMusic.artistName ? ` Ã‚Â· ${backgroundMusic.artistName}` : '';
-    return `${backgroundMusic.trackTitle}${artist}`;
-  }, [backgroundMusic?.artistName, backgroundMusic?.trackTitle]);
-  const canAutoplayMusic =
-    Platform.OS !== 'web' &&
-    !!backgroundMusic?.streamURL &&
-    (isFullscreen || enableMusicAutoplay) &&
-    isMusicActive;
   const visibleTags = taggedUsers.slice(0, 3);
   const hiddenTagsCount = Math.max(0, taggedUsers.length - visibleTags.length);
-  const isMusicMuted = useExternalMusicControl ? musicMuted : internalMusicMuted;
   const imageResizeMode = isFullscreen ? 'contain' : 'contain';
   const resolvedLiked = !!isLiked;
   const resolvedLikesCount = Math.max(0, Number(likes || 0));
@@ -277,76 +229,6 @@ const PostCardComponent = ({
   useEffect(() => {
     setResolvedAspectRatio(clampAspectRatio(mediaAspectRatio));
   }, [mediaAspectRatio]);
-
-  useEffect(() => {
-    if (useExternalMusicControl) return;
-    if (!canAutoplayMusic || !backgroundMusic?.streamURL) {
-      if (localMusicSoundRef.current) {
-        void localMusicSoundRef.current.unloadAsync();
-        localMusicSoundRef.current = null;
-      }
-      return;
-    }
-
-    let cancelled = false;
-
-    const loadMusic = async () => {
-      try {
-        await ensurePlaybackAudioMode();
-
-        if (localMusicSoundRef.current) {
-          await localMusicSoundRef.current.unloadAsync();
-          localMusicSoundRef.current = null;
-        }
-
-        const { sound } = await Audio.Sound.createAsync(
-          { uri: backgroundMusic.streamURL || '' },
-          {
-            shouldPlay: true,
-            isLooping: true,
-            volume: isMusicMuted ? 0 : 1,
-            rate: 1,
-            shouldCorrectPitch: true,
-            positionMillis: Math.max(0, Math.floor((backgroundMusic.clipStart || 0) * 1000)),
-          }
-        );
-
-        if (cancelled) {
-          await sound.unloadAsync();
-          return;
-        }
-
-        localMusicSoundRef.current = sound;
-      } catch (error) {
-        console.error('Post music playback failed:', error);
-      }
-    };
-
-    void loadMusic();
-
-    return () => {
-      cancelled = true;
-      if (localMusicSoundRef.current) {
-        void localMusicSoundRef.current.unloadAsync();
-        localMusicSoundRef.current = null;
-      }
-    };
-  }, [backgroundMusic?.clipStart, backgroundMusic?.streamURL, canAutoplayMusic, isMusicMuted, useExternalMusicControl]);
-
-  useEffect(() => {
-    if (useExternalMusicControl) return;
-    if (!localMusicSoundRef.current) return;
-    void localMusicSoundRef.current.setStatusAsync({ volume: isMusicMuted ? 0 : 1, rate: 1, shouldCorrectPitch: true });
-  }, [isMusicMuted, useExternalMusicControl]);
-
-  useEffect(() => {
-    return () => {
-      if (localMusicSoundRef.current) {
-        void localMusicSoundRef.current.unloadAsync();
-        localMusicSoundRef.current = null;
-      }
-    };
-  }, []);
 
   const handleProfilePress = () => {
     if (!user.userId && !user.username) return;
@@ -392,17 +274,45 @@ const PostCardComponent = ({
     }
   };
 
+  const triggerDoubleTapHeart = () => {
+    if (doubleTapAnimating.current) return;
+    doubleTapAnimating.current = true;
+
+    doubleTapHeart.setValue(0);
+    doubleTapHeartScale.setValue(0.6);
+    doubleTapRing.setValue(0);
+
+    Animated.sequence([
+      Animated.parallel([
+        Animated.timing(doubleTapHeart, { toValue: 1, duration: 120, useNativeDriver: true }),
+        Animated.spring(doubleTapHeartScale, {
+          toValue: 1.12,
+          friction: 5,
+          tension: 140,
+          useNativeDriver: true,
+        }),
+        Animated.timing(doubleTapRing, { toValue: 1, duration: 460, useNativeDriver: true }),
+      ]),
+      Animated.delay(180),
+      Animated.parallel([
+        Animated.timing(doubleTapHeart, { toValue: 0, duration: 220, useNativeDriver: true }),
+        Animated.timing(doubleTapHeartScale, { toValue: 0.85, duration: 220, useNativeDriver: true }),
+      ]),
+    ]).start(({ finished }) => {
+      doubleTapAnimating.current = false;
+      if (!finished) {
+        doubleTapHeart.setValue(0);
+      }
+    });
+  };
+
   const handleDoubleTap = () => {
     const now = Date.now();
     if (now - lastTap.current < 300) {
       if (!resolvedLiked && onLike) {
         onLike(postId);
       }
-      doubleTapHeart.setValue(0);
-      Animated.sequence([
-        Animated.timing(doubleTapHeart, { toValue: 1, duration: 160, useNativeDriver: true }),
-        Animated.timing(doubleTapHeart, { toValue: 0, duration: 220, useNativeDriver: true }),
-      ]).start();
+      triggerDoubleTapHeart();
     }
     lastTap.current = now;
   };
@@ -497,9 +407,6 @@ const PostCardComponent = ({
   const likedByName = primaryLikedByUser?.username || primaryLikedByUser?.displayName || '';
   const showLikedByOthers = resolvedLikesCount > 1 || likedByPreview.length > 1;
   const normalizedCaption = (caption || '').trim();
-  const shouldShowMusicMeta = !!musicLabel;
-  const showMusicControl = Platform.OS !== 'web' && !!backgroundMusic?.streamURL && (useExternalMusicControl || canAutoplayMusic);
-  const showMutedMusicIcon = useExternalMusicControl ? (!isMusicActive || !!musicMuted) : isMusicMuted;
 
   return (
     <View style={[styles.container, isFullscreen && styles.containerFullscreen]}>
@@ -558,14 +465,6 @@ const PostCardComponent = ({
                 <Text style={styles.audienceBadgeText}>{audienceLabel}</Text>
               </View>
             ) : null}
-            {shouldShowMusicMeta ? (
-              <View style={styles.musicMetaRow}>
-                <Music4 size={12} color="#F8FAFC" strokeWidth={1.8} />
-                <Text style={styles.musicMetaText} numberOfLines={1}>
-                  {musicLabel}
-                </Text>
-              </View>
-            ) : null}
             {location ? (
               <View style={styles.locationContainer}>
                 <MapPin size={12} color={colors.text.secondary} strokeWidth={1.5} />
@@ -608,44 +507,39 @@ const PostCardComponent = ({
             resizeMode={imageResizeMode}
           />
 
-          {showMusicControl ? (
-            <TouchableOpacity
-              style={styles.musicControl}
-              activeOpacity={0.9}
-              onPress={() => {
-                if (useExternalMusicControl) {
-                  onToggleMusicMute?.(postId);
-                  return;
-                }
-                setInternalMusicMuted((prev) => !prev);
-              }}
-            >
-              {showMutedMusicIcon ? (
-                <VolumeX size={16} color="#FFFFFF" strokeWidth={2} />
-              ) : (
-                <Volume2 size={16} color="#FFFFFF" strokeWidth={2} />
-              )}
-            </TouchableOpacity>
-          ) : null}
-
+          {/* Expanding ring behind the heart (glimpse-style) */}
           <Animated.View
+            pointerEvents="none"
             style={[
-              styles.doubleTapHeart,
+              styles.doubleTapRing,
               {
-                opacity: doubleTapHeart,
+                opacity: doubleTapRing.interpolate({
+                  inputRange: [0, 0.2, 1],
+                  outputRange: [0, 0.5, 0],
+                }),
                 transform: [
                   {
-                    scale: doubleTapHeart.interpolate({
+                    scale: doubleTapRing.interpolate({
                       inputRange: [0, 1],
-                      outputRange: [0, 1],
+                      outputRange: [0.35, 1.9],
                     }),
                   },
                 ],
               },
-              { pointerEvents: 'none' as const },
+            ]}
+          />
+
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.doubleTapHeart,
+              {
+                opacity: doubleTapHeart,
+                transform: [{ scale: doubleTapHeartScale }],
+              },
             ]}
           >
-            <Heart size={96} color="#FFFFFF" fill="#FFFFFF" strokeWidth={1.5} />
+            <Heart size={96} color="#FF2D55" fill="#FF2D55" strokeWidth={1.5} />
           </Animated.View>
         </View>
       </TouchableOpacity>
@@ -921,8 +815,6 @@ export const PostCard = memo(PostCardComponent, (prevProps, nextProps) => {
     prevProps.shares === nextProps.shares &&
     prevProps.image === nextProps.image &&
     prevProps.caption === nextProps.caption &&
-    prevProps.backgroundMusic?.trackId === nextProps.backgroundMusic?.trackId &&
-    prevProps.backgroundMusic?.streamURL === nextProps.backgroundMusic?.streamURL &&
     prevProps.latestCommentText === nextProps.latestCommentText &&
     prevProps.latestCommentUser === nextProps.latestCommentUser &&
     prevProps.time === nextProps.time &&
@@ -930,10 +822,6 @@ export const PostCard = memo(PostCardComponent, (prevProps, nextProps) => {
     sameById(prevProps.taggedUsers, nextProps.taggedUsers) &&
     sameCollaborators(prevProps.collaborators, nextProps.collaborators) &&
     prevProps.showMenuButton === nextProps.showMenuButton &&
-    prevProps.enableMusicAutoplay === nextProps.enableMusicAutoplay &&
-    prevProps.isMusicActive === nextProps.isMusicActive &&
-    prevProps.useExternalMusicControl === nextProps.useExternalMusicControl &&
-    prevProps.musicMuted === nextProps.musicMuted &&
     prevProps.variant === nextProps.variant
   );
 });
@@ -1066,18 +954,6 @@ const styles = StyleSheet.create({
     fontWeight: '800' as any,
     letterSpacing: 0.2,
   },
-  musicMetaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 2,
-    gap: 5,
-  },
-  musicMetaText: {
-    fontSize: 12,
-    color: '#D8E1F8',
-    fontWeight: '500' as any,
-    flexShrink: 1,
-  },
   locationContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1127,20 +1003,6 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
-  musicControl: {
-    position: 'absolute',
-    left: 14,
-    bottom: 14,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(10, 14, 24, 0.72)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.18)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 2,
-  },
   doubleTapHeart: {
     position: 'absolute',
     top: '50%',
@@ -1149,6 +1011,23 @@ const styles = StyleSheet.create({
     marginLeft: -60,
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#FF2D55',
+    shadowOpacity: 0.55,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 12,
+  },
+  doubleTapRing: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    width: 120,
+    height: 120,
+    marginTop: -60,
+    marginLeft: -60,
+    borderRadius: 60,
+    borderWidth: 3,
+    borderColor: '#FF2D55',
   },
   actions: {
     flexDirection: 'row',

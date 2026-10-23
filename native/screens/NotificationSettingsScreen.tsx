@@ -4,7 +4,6 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   SafeAreaView,
   TouchableOpacity,
   Switch,
@@ -15,7 +14,95 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../contexts/AuthContext';
 import { settingsService } from '../services/settings.service';
-import { spacing, typography, useColors } from '../styles/theme';
+import { spacing, typography, useColors, ThemeColors } from '../styles/theme';
+
+type Prefs = {
+  likes: boolean;
+  comments: boolean;
+  follows: boolean;
+  mentions: boolean;
+  stories: boolean;
+  liveVideos: boolean;
+  reels: boolean;
+  messages: boolean;
+  messageRequests: boolean;
+  reminders: boolean;
+  productUpdates: boolean;
+};
+
+const DEFAULT_PREFS: Prefs = {
+  likes: true,
+  comments: true,
+  follows: true,
+  mentions: true,
+  stories: true,
+  liveVideos: true,
+  reels: true,
+  messages: true,
+  messageRequests: true,
+  reminders: true,
+  productUpdates: false,
+};
+
+// Toggled by the master switch.
+const PUSH_KEYS: Array<keyof Prefs> = [
+  'likes',
+  'comments',
+  'follows',
+  'mentions',
+  'stories',
+  'liveVideos',
+  'reels',
+  'messages',
+  'messageRequests',
+];
+
+interface ToggleProps {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  value: boolean;
+  onChange: (v: boolean) => void;
+  saving: boolean;
+  styles: ReturnType<typeof createStyles>;
+  c: ThemeColors;
+  last?: boolean;
+}
+
+/**
+ * Declared at module scope on purpose - defining it inside the screen
+ * recreates the component type on every render, which remounts the switch and
+ * leaves it visually stuck.
+ */
+function Toggle({ icon, label, value, onChange, saving, styles, c, last }: ToggleProps) {
+  return (
+    <View
+      style={[
+        styles.item,
+        !last && { borderBottomColor: c.border.subtle, borderBottomWidth: 1 },
+        saving && styles.itemDisabled,
+      ]}
+    >
+      <View style={styles.itemLeft}>
+        <View style={styles.iconWrap}>
+          <Ionicons name={icon} size={18} color={c.accent.primary} />
+        </View>
+        <Text style={styles.itemTitle}>{label}</Text>
+      </View>
+      {saving ? (
+        <View style={styles.statusBadge}>
+          <Text style={styles.statusBadgeText}>Saving</Text>
+        </View>
+      ) : (
+        <Switch
+          value={!!value}
+          onValueChange={onChange}
+          trackColor={{ false: c.border.light, true: `${c.accent.primary}40` }}
+          thumbColor={value ? c.accent.onAccent : c.text.secondary}
+        />
+      )}
+    </View>
+  );
+}
 
 export default function NotificationSettingsScreen() {
   const navigation = useNavigation();
@@ -23,33 +110,11 @@ export default function NotificationSettingsScreen() {
   const c = useColors();
   const styles = useMemo(() => createStyles(c), [c]);
   const intro = useRef(new Animated.Value(0)).current;
-  const [prefs, setPrefs] = useState({
-    likes: true,
-    comments: true,
-    follows: true,
-    mentions: true,
-    stories: true,
-    liveVideos: true,
-    reels: true,
-    messages: true,
-    messageRequests: true,
-    reminders: true,
-    productUpdates: false,
-  });
+  const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS);
   const [loading, setLoading] = useState(false);
   const [savingKeys, setSavingKeys] = useState<Record<string, boolean>>({});
 
-  const pushEnabled =
-    prefs.likes &&
-    prefs.comments &&
-    prefs.follows &&
-    prefs.mentions &&
-    prefs.stories &&
-    prefs.liveVideos &&
-    prefs.reels &&
-    prefs.messages &&
-    prefs.messageRequests;
-  const enabledCount = Object.values(prefs).filter(Boolean).length;
+  const pushEnabled = PUSH_KEYS.every((key) => prefs[key]);
 
   useEffect(() => {
     Animated.timing(intro, {
@@ -66,27 +131,29 @@ export default function NotificationSettingsScreen() {
       try {
         setLoading(true);
         const p = await settingsService.getNotificationPreferences(user.userId);
-        setPrefs((prev) => ({ ...prev, ...(p as any) }));
-      } catch {
-        // ignore for now
+        setPrefs((prev) => ({ ...prev, ...(p as Partial<Prefs>) }));
+      } catch (error) {
+        console.error('Failed to load notification preferences:', error);
       } finally {
         setLoading(false);
       }
     };
-    load();
+    void load();
   }, [user?.userId]);
 
-  const updatePref = async (key: keyof typeof prefs, value: boolean) => {
+  const updatePref = async (key: keyof Prefs, value: boolean) => {
     if (savingKeys[key]) return;
 
+    const previous = prefs[key];
     setSavingKeys((prev) => ({ ...prev, [key]: true }));
     setPrefs((prev) => ({ ...prev, [key]: value }));
     try {
       if (user) {
         await settingsService.updateNotificationPreferences(user.userId, { [key]: value } as any);
       }
-    } catch {
-      setPrefs((prev) => ({ ...prev, [key]: !value }));
+    } catch (error) {
+      console.error(`Failed to update notification preference "${key}":`, error);
+      setPrefs((prev) => ({ ...prev, [key]: previous }));
     } finally {
       setSavingKeys((prev) => ({ ...prev, [key]: false }));
     }
@@ -95,68 +162,22 @@ export default function NotificationSettingsScreen() {
   const updateAllPrefs = async (value: boolean) => {
     if (savingKeys.all) return;
 
-    const next = {
-      likes: value,
-      comments: value,
-      follows: value,
-      mentions: value,
-      stories: value,
-      liveVideos: value,
-      reels: value,
-      messages: value,
-      messageRequests: value,
-      reminders: value,
-      productUpdates: prefs.productUpdates,
-    };
+    const previous = prefs;
+    const next: Prefs = { ...prefs };
+    PUSH_KEYS.forEach((key) => {
+      next[key] = value;
+    });
+
     setSavingKeys((prev) => ({ ...prev, all: true }));
-    setPrefs((prev) => ({ ...prev, ...next }));
+    setPrefs(next);
     try {
       if (user) await settingsService.updateNotificationPreferences(user.userId, next as any);
-    } catch {
-      // keep optimistic state even if backend fails; next refresh will reconcile
+    } catch (error) {
+      console.error('Failed to update notification preferences:', error);
+      setPrefs(previous);
     } finally {
       setSavingKeys((prev) => ({ ...prev, all: false }));
     }
-  };
-
-  const Toggle = ({
-    icon,
-    label,
-    value,
-    onChange,
-    settingKey,
-  }: {
-    icon: keyof typeof Ionicons.glyphMap;
-    label: string;
-    value: boolean;
-    onChange: (v: boolean) => void;
-    settingKey: string;
-  }) => {
-    const isSaving = !!savingKeys[settingKey];
-
-    return (
-      <View style={[styles.item, isSaving && styles.itemDisabled]}>
-        <View style={styles.itemLeft}>
-          <View style={styles.iconWrap}>
-            <Ionicons name={icon} size={18} color={c.accent.primary} />
-          </View>
-          <Text style={styles.itemTitle}>{label}</Text>
-        </View>
-        {isSaving ? (
-          <View style={styles.statusBadge}>
-            <Text style={styles.statusBadgeText}>Saving</Text>
-          </View>
-        ) : (
-          <Switch
-            value={!!value}
-            onValueChange={onChange}
-            disabled={isSaving}
-            trackColor={{ false: c.border.light, true: `${c.accent.primary}40` }}
-            thumbColor={value ? '#FFFFFF' : c.text.secondary}
-          />
-        )}
-      </View>
-    );
   };
 
   const translateY = intro.interpolate({ inputRange: [0, 1], outputRange: [10, 0] });
@@ -164,7 +185,14 @@ export default function NotificationSettingsScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerButton} activeOpacity={0.75}>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={styles.headerButton}
+          activeOpacity={0.75}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
           <Ionicons name="chevron-back" size={24} color={c.text.primary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Notifications</Text>
@@ -179,52 +207,48 @@ export default function NotificationSettingsScreen() {
         showsVerticalScrollIndicator={false}
       >
         <Animated.View style={{ opacity: intro, transform: [{ translateY }] }}>
-          <View style={styles.heroCard}>
-            <Text style={styles.heroTitle}>Signal-first delivery</Text>
-            <Text style={styles.heroText}>High-signal alerts stay easy to control, and repeated taps will not spam extra writes.</Text>
-            <View style={styles.heroPillRow}>
-              <View style={styles.heroPill}>
-                <Text style={styles.heroPillText}>{enabledCount}/11 live</Text>
-              </View>
-              <View style={styles.heroPill}>
-                <Text style={styles.heroPillText}>{pushEnabled ? 'Priority on' : 'Limited'}</Text>
-              </View>
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>All notifications</Text>
+            <View style={styles.card}>
+              <Toggle
+                icon="notifications"
+                label="Push notifications"
+                value={pushEnabled}
+                onChange={updateAllPrefs}
+                saving={!!savingKeys.all}
+                styles={styles}
+                c={c}
+                last
+              />
             </View>
           </View>
 
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Global</Text>
+            <Text style={styles.sectionTitle}>Posts & media</Text>
             <View style={styles.card}>
-              <Toggle icon="notifications" label="Push Notifications" value={pushEnabled} onChange={updateAllPrefs} settingKey="all" />
+              <Toggle icon="heart" label="Likes" value={prefs.likes} onChange={(v) => updatePref('likes', v)} saving={!!savingKeys.likes} styles={styles} c={c} />
+              <Toggle icon="chatbubble" label="Comments" value={prefs.comments} onChange={(v) => updatePref('comments', v)} saving={!!savingKeys.comments} styles={styles} c={c} />
+              <Toggle icon="at" label="Mentions" value={prefs.mentions} onChange={(v) => updatePref('mentions', v)} saving={!!savingKeys.mentions} styles={styles} c={c} />
+              <Toggle icon="images" label="Stories" value={prefs.stories} onChange={(v) => updatePref('stories', v)} saving={!!savingKeys.stories} styles={styles} c={c} />
+              <Toggle icon="videocam" label="Live videos" value={prefs.liveVideos} onChange={(v) => updatePref('liveVideos', v)} saving={!!savingKeys.liveVideos} styles={styles} c={c} />
+              <Toggle icon="play" label="Glimpses" value={prefs.reels} onChange={(v) => updatePref('reels', v)} saving={!!savingKeys.reels} styles={styles} c={c} last />
             </View>
           </View>
 
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Posts & Media</Text>
+            <Text style={styles.sectionTitle}>People & messages</Text>
             <View style={styles.card}>
-              <Toggle icon="heart" label="Likes" value={prefs.likes} onChange={(v) => updatePref('likes', v)} settingKey="likes" />
-              <Toggle icon="chatbubble" label="Comments" value={prefs.comments} onChange={(v) => updatePref('comments', v)} settingKey="comments" />
-              <Toggle icon="at" label="Mentions" value={prefs.mentions} onChange={(v) => updatePref('mentions', v)} settingKey="mentions" />
-              <Toggle icon="images" label="Stories" value={prefs.stories} onChange={(v) => updatePref('stories', v)} settingKey="stories" />
-              <Toggle icon="videocam" label="Live Videos" value={prefs.liveVideos} onChange={(v) => updatePref('liveVideos', v)} settingKey="liveVideos" />
-              <Toggle icon="play" label="Glimpses" value={prefs.reels} onChange={(v) => updatePref('reels', v)} settingKey="reels" />
-            </View>
-          </View>
-
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>People & Messages</Text>
-            <View style={styles.card}>
-              <Toggle icon="person-add" label="New Followers" value={prefs.follows} onChange={(v) => updatePref('follows', v)} settingKey="follows" />
-              <Toggle icon="mail" label="Message Requests" value={prefs.messageRequests} onChange={(v) => updatePref('messageRequests', v)} settingKey="messageRequests" />
-              <Toggle icon="chatbubbles" label="Message Notifications" value={prefs.messages} onChange={(v) => updatePref('messages', v)} settingKey="messages" />
+              <Toggle icon="person-add" label="New followers" value={prefs.follows} onChange={(v) => updatePref('follows', v)} saving={!!savingKeys.follows} styles={styles} c={c} />
+              <Toggle icon="mail" label="Message requests" value={prefs.messageRequests} onChange={(v) => updatePref('messageRequests', v)} saving={!!savingKeys.messageRequests} styles={styles} c={c} />
+              <Toggle icon="chatbubbles" label="Messages" value={prefs.messages} onChange={(v) => updatePref('messages', v)} saving={!!savingKeys.messages} styles={styles} c={c} last />
             </View>
           </View>
 
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>System</Text>
             <View style={styles.card}>
-              <Toggle icon="alarm" label="Reminders" value={prefs.reminders} onChange={(v) => updatePref('reminders', v)} settingKey="reminders" />
-              <Toggle icon="information-circle" label="Product Updates" value={prefs.productUpdates} onChange={(v) => updatePref('productUpdates', v)} settingKey="productUpdates" />
+              <Toggle icon="alarm" label="Reminders" value={prefs.reminders} onChange={(v) => updatePref('reminders', v)} saving={!!savingKeys.reminders} styles={styles} c={c} />
+              <Toggle icon="information-circle" label="Product updates" value={prefs.productUpdates} onChange={(v) => updatePref('productUpdates', v)} saving={!!savingKeys.productUpdates} styles={styles} c={c} last />
             </View>
           </View>
         </Animated.View>
@@ -233,7 +257,7 @@ export default function NotificationSettingsScreen() {
   );
 }
 
-const createStyles = (c: ReturnType<typeof useColors>) => StyleSheet.create({
+const createStyles = (c: ThemeColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: c.background.primary },
   header: {
     flexDirection: 'row',
@@ -252,45 +276,6 @@ const createStyles = (c: ReturnType<typeof useColors>) => StyleSheet.create({
   headerTitle: { fontSize: typography.fontSize.lg, fontWeight: '700' as any, color: c.text.primary },
   content: { flex: 1 },
   contentContainer: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.xl },
-  heroCard: {
-    backgroundColor: c.background.tertiary,
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: c.border.subtle,
-    padding: spacing.lg,
-    marginBottom: spacing.xl,
-  },
-  heroTitle: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: '700' as any,
-    color: c.text.primary,
-    marginBottom: 6,
-  },
-  heroText: {
-    fontSize: typography.fontSize.sm,
-    lineHeight: 20,
-    color: c.text.secondary,
-    marginBottom: spacing.md,
-  },
-  heroPillRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-  },
-  heroPill: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    marginRight: spacing.sm,
-    marginBottom: spacing.xs,
-    backgroundColor: c.background.secondary,
-    borderWidth: 1,
-    borderColor: c.border.subtle,
-  },
-  heroPillText: {
-    fontSize: 12,
-    fontWeight: '700' as any,
-    color: c.text.primary,
-  },
   section: { marginBottom: spacing.xl },
   sectionTitle: {
     fontSize: 12,
@@ -312,11 +297,9 @@ const createStyles = (c: ReturnType<typeof useColors>) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    minHeight: 68,
+    minHeight: 60,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: c.border.subtle,
   },
   itemDisabled: {
     opacity: 0.62,

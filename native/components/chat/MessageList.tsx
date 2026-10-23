@@ -6,6 +6,7 @@ import type { ListRenderItem } from '@shopify/flash-list';
 
 type MessageListProps = {
   data: ChatMessage[];
+  extraData?: any;
   renderBubble: ListRenderItem<ChatMessage>;
   onVisibleChange?: (ids: Set<string>) => void;
   flatListRef: React.RefObject<any>;
@@ -23,6 +24,7 @@ type MessageListProps = {
 
 const MessageList: React.FC<MessageListProps> = ({
   data,
+  extraData,
   renderBubble,
   onVisibleChange,
   flatListRef,
@@ -63,10 +65,12 @@ const MessageList: React.FC<MessageListProps> = ({
     <FlashList
       ref={flatListRef}
       data={data}
+      extraData={extraData}
       renderItem={renderBubble}
       keyExtractor={keyExtractor}
       initialScrollIndex={initialScrollIndex}
       contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 14 } as any}
+      estimatedItemSize={100}
       maintainVisibleContentPosition={maintainVisibleContentPosition}
       onViewableItemsChanged={shouldTrackViewability ? onViewableItemsChanged.current : undefined}
       viewabilityConfig={shouldTrackViewability ? (viewabilityConfig.current as FlatListProps<ChatMessage>['viewabilityConfig']) : undefined}

@@ -374,11 +374,7 @@ export function StoryMediaRenderer({
         });
 
         try {
-          var hasMusicSticker = stickers.some(function(st) {
-            var kind = String((st && (st.kind || st.type)) || '').toLowerCase();
-            return kind === 'music';
-          });
-          if (!hasMusicSticker && audioOverlay && typeof audioOverlay.uri === 'string' && audioOverlay.uri) {
+          if (audioOverlay && typeof audioOverlay.uri === 'string' && audioOverlay.uri) {
             var md = document.createElement('div');
             md.className = 'overlay sticker';
             md.style.cssText = 'left:' + (STAGE_W * 0.5) + 'px;top:' + (STAGE_H * 0.14) + 'px;transform:translate(-50%,-50%);';

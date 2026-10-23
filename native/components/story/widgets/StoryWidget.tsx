@@ -11,7 +11,7 @@ import { WidgetStaticTime } from './WidgetStaticTime';
 import { WidgetStyleOptions, sharedWidgetStyles } from './styles';
 import { Image } from 'expo-image';
 
-export type OverlayStickerType = 'emoji' | 'label' | 'gif' | 'location' | 'mention' | 'hashtag' | 'poll' | 'slider' | 'question' | 'quiz' | 'countdown' | 'time' | 'reshare' | 'music' | 'rating';
+export type OverlayStickerType = 'emoji' | 'label' | 'gif' | 'location' | 'mention' | 'hashtag' | 'poll' | 'slider' | 'question' | 'quiz' | 'countdown' | 'time' | 'reshare' | 'rating';
 
 export interface StoryWidgetProps {
     type: string | OverlayStickerType;
@@ -194,21 +194,6 @@ export function StoryWidget({
                     style={{ width: '100%', height: '100%', borderRadius: 12, overflow: 'hidden' }}
                     contentFit="contain"
                 />
-            );
-        }
-
-        case 'music': {
-            const title = typeof content === 'object'
-                ? String(content?.title || content?.name || 'Audio Track')
-                : (asString(content) || 'Audio Track');
-            const artist = typeof content === 'object'
-                ? String(content?.artist || content?.subtitle || '')
-                : '';
-            return (
-                <View style={{ backgroundColor: 'rgba(0,0,0,0.7)', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 10, minWidth: 180, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }}>
-                    <Text style={{ color: '#fff', fontWeight: '800', fontSize: 13 }} numberOfLines={1}>{'\u266B'} {title}</Text>
-                    {!!artist && <Text style={{ color: 'rgba(255,255,255,0.75)', marginTop: 2, fontSize: 11 }} numberOfLines={1}>{artist}</Text>}
-                </View>
             );
         }
 

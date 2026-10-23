@@ -1,4 +1,3 @@
-import { InlineLoadingSkeleton, ButtonLoadingSkeleton } from '../components/ui/LoadingSkeleton';
 import React, { useState } from 'react';
 import {
   View,
@@ -8,20 +7,21 @@ import {
   StyleSheet,
   SafeAreaView,
   ScrollView,
-  ActivityIndicator,
-  Dimensions} from 'react-native';
+} from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import { Image } from 'expo-image';
 import { useAuth } from '../contexts/AuthContext';
 import { userService } from '../services/user.service';
 import { mediaService } from '../services/media.service.native';
-import { colors, spacing, typography } from '../styles/theme';
-import { Image } from 'expo-image';
+import { borderRadius, spacing, typography, useColors } from '../styles/theme';
+import { InlineLoadingSkeleton } from '../components/ui/LoadingSkeleton';
 
 export default function AvatarEditorScreen() {
   const navigation = useNavigation();
-  const { user } = useAuth();
+  const c = useColors();
+  const { user, refreshUser } = useAuth();
   const [selectedImage, setSelectedImage] = useState<any>(null);
   const [uploading, setUploading] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
@@ -29,11 +29,15 @@ export default function AvatarEditorScreen() {
   const pickImage = async (useCamera = false) => {
     try {
       if (useCamera) {
-        // launchCameraAsync throws (or silently cancels) without camera
-        // permission - request it explicitly before opening the camera.
         const permission = await ImagePicker.requestCameraPermissionsAsync();
         if (!permission.granted) {
-          Alert.alert('Camera access needed', 'Allow camera access in your settings to take a profile photo.');
+          Alert.alert('Camera access needed', 'Allow camera access to take a photo.');
+          return;
+        }
+      } else {
+        const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!permission.granted) {
+          Alert.alert('Photo access needed', 'Allow photo access to pick an image.');
           return;
         }
       }
@@ -58,19 +62,19 @@ export default function AvatarEditorScreen() {
       }
     } catch (error) {
       console.error('Error picking image:', error);
-      Alert.alert('Error', 'Failed to select image');
+      Alert.alert('Could not open picker', 'Try again.');
     }
   };
 
   const handleDiscard = () => {
-    if (hasChanges) {
-      Alert.alert('Discard Changes', 'Are you sure you want to discard your changes?', [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Discard', style: 'destructive', onPress: () => navigation.goBack() }
-      ]);
-    } else {
+    if (!hasChanges) {
       navigation.goBack();
+      return;
     }
+    Alert.alert('Discard changes?', 'Your new photo will not be saved.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Discard', style: 'destructive', onPress: () => navigation.goBack() },
+    ]);
   };
 
   const handleSave = async () => {
@@ -83,10 +87,9 @@ export default function AvatarEditorScreen() {
     try {
       const avatarURL = await mediaService.uploadAvatar(user.userId, selectedImage);
       await userService.updateUser(user.userId, { avatarURL });
-      
-      Alert.alert('Success', 'Profile photo updated successfully!', [
-        { text: 'OK', onPress: () => navigation.goBack() }
-      ]);
+      await refreshUser();
+
+      Alert.alert('Photo updated', undefined, [{ text: 'OK', onPress: () => navigation.goBack() }]);
     } catch (error) {
       console.error('Failed to update avatar:', error);
       const message = error instanceof Error ? error.message : 'Failed to update profile photo';
@@ -98,249 +101,255 @@ export default function AvatarEditorScreen() {
 
   const handleRemove = async () => {
     if (!user) return;
-    
-    Alert.alert(
-      'Remove Profile Photo',
-      'Are you sure you want to remove your profile photo?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: async () => {
-            setUploading(true);
-            try {
-              const previousAvatarURL = user.avatarURL;
-              // `undefined` clears the field on the user doc (updateUser
-              // translates it to an explicit Firestore field deletion).
-              await userService.updateUser(user.userId, { avatarURL: undefined });
-              // Best-effort cleanup of the stored object so it does not orphan.
-              if (previousAvatarURL) {
-                await mediaService.deleteAvatar(previousAvatarURL);
-              }
-              Alert.alert('Success', 'Profile photo removed successfully!', [
-                { text: 'OK', onPress: () => navigation.goBack() }
-              ]);
-            } catch (error) {
-              console.error('Failed to remove avatar:', error);
-              const message = error instanceof Error ? error.message : 'Failed to remove profile photo';
-              Alert.alert('Remove failed', message);
-            } finally {
-              setUploading(false);
+
+    Alert.alert('Remove photo?', 'Your profile will fall back to your initials.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: async () => {
+          setUploading(true);
+          try {
+            const previousAvatarURL = user.avatarURL;
+            // `undefined` clears the field on the user doc (updateUser
+            // translates it to an explicit Firestore field deletion).
+            await userService.updateUser(user.userId, { avatarURL: undefined });
+            await refreshUser();
+            // Best-effort cleanup of the stored object so it does not orphan.
+            if (previousAvatarURL) {
+              await mediaService.deleteAvatar(previousAvatarURL);
             }
+            Alert.alert('Photo removed', undefined, [
+              { text: 'OK', onPress: () => navigation.goBack() },
+            ]);
+          } catch (error) {
+            console.error('Failed to remove avatar:', error);
+            const message = error instanceof Error ? error.message : 'Failed to remove profile photo';
+            Alert.alert('Remove failed', message);
+          } finally {
+            setUploading(false);
           }
-        }
-      ]
-    );
+        },
+      },
+    ]);
   };
 
   const currentAvatarURL = selectedImage?.uri || user?.avatarURL;
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={handleDiscard}>
-          <Ionicons name="close" size={24} color={colors.text.primary} />
+    <SafeAreaView style={[styles.container, { backgroundColor: c.background.primary }]}>
+      <View style={[styles.header, { borderBottomColor: c.border.subtle }]}>
+        <TouchableOpacity
+          onPress={handleDiscard}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          style={styles.iconButton}
+          accessibilityRole="button"
+          accessibilityLabel="Cancel"
+        >
+          <Ionicons name="close" size={24} color={c.text.primary} />
         </TouchableOpacity>
-        <Text style={styles.title}>Profile Photo</Text>
-        <TouchableOpacity 
+
+        <Text style={[styles.title, { color: c.text.primary }]}>Profile photo</Text>
+
+        <TouchableOpacity
           onPress={handleSave}
           disabled={uploading || !hasChanges}
-          style={[styles.saveButton, (!hasChanges || uploading) && styles.saveButtonDisabled]}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          style={[styles.saveButton, (!hasChanges || uploading) && styles.disabled]}
+          accessibilityRole="button"
+          accessibilityLabel="Save photo"
         >
           {uploading ? (
-            <InlineLoadingSkeleton />
+            <InlineLoadingSkeleton size={16} />
           ) : (
-            <Text style={[styles.saveText, !hasChanges && styles.saveTextDisabled]}>
-              Save
-            </Text>
+            <Text style={[styles.saveText, !hasChanges && { color: c.text.muted }]}>Save</Text>
           )}
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Avatar Preview */}
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.avatarContainer}>
           {currentAvatarURL ? (
-            <Image source={{ uri: currentAvatarURL }} style={styles.avatar} />
+            <Image
+              source={{ uri: currentAvatarURL }}
+              style={styles.avatar}
+              contentFit="cover"
+              transition={150}
+            />
           ) : (
-            <View style={styles.avatarPlaceholder}>
-              <Ionicons name="person" size={80} color={colors.text.secondary} />
+            <View
+              style={[
+                styles.avatarPlaceholder,
+                { backgroundColor: c.background.secondary, borderColor: c.border.medium },
+              ]}
+            >
+              <Ionicons name="person" size={80} color={c.text.muted} />
             </View>
           )}
-          {selectedImage && (
-            <View style={styles.changeIndicator}>
-              <Ionicons name="checkmark-circle" size={24} color={colors.accent.primary} />
+          {selectedImage ? (
+            <View style={[styles.changeIndicator, { backgroundColor: c.background.primary }]}>
+              <Ionicons name="checkmark-circle" size={24} color={c.accent.primary} />
             </View>
-          )}
+          ) : null}
         </View>
 
-        {/* Action Buttons */}
         <View style={styles.actionsContainer}>
-          <TouchableOpacity 
-            style={styles.actionButton}
+          <ActionButton
+            icon="camera"
+            label="Take photo"
             onPress={() => pickImage(true)}
             disabled={uploading}
-          >
-            <View style={styles.actionIcon}>
-              <Ionicons name="camera" size={24} color={colors.accent.primary} />
-            </View>
-            <Text style={styles.actionText}>Take Photo</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={styles.actionButton}
+            iconColor={c.accent.primary}
+            surface={c.background.secondary}
+            borderColor={c.border.subtle}
+            textColor={c.text.primary}
+          />
+          <ActionButton
+            icon="images"
+            label="Choose from library"
             onPress={() => pickImage(false)}
             disabled={uploading}
-          >
-            <View style={styles.actionIcon}>
-              <Ionicons name="images" size={24} color={colors.accent.primary} />
-            </View>
-            <Text style={styles.actionText}>Choose from Library</Text>
-          </TouchableOpacity>
-
-          {user?.avatarURL && (
-            <TouchableOpacity 
-              style={styles.actionButton}
+            iconColor={c.accent.primary}
+            surface={c.background.secondary}
+            borderColor={c.border.subtle}
+            textColor={c.text.primary}
+          />
+          {user?.avatarURL ? (
+            <ActionButton
+              icon="trash"
+              label="Remove photo"
               onPress={handleRemove}
               disabled={uploading}
-            >
-              <View style={styles.actionIcon}>
-                <Ionicons name="trash" size={24} color={colors.text.secondary} />
-              </View>
-              <Text style={[styles.actionText, styles.removeText]}>Remove Photo</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {/* Tips */}
-        <View style={styles.tipsContainer}>
-          <Text style={styles.tipsTitle}>Photo Tips:</Text>
-          <Text style={styles.tipText}>• Use a clear, well-lit photo</Text>
-          <Text style={styles.tipText}>• Make sure your face is visible</Text>
-          <Text style={styles.tipText}>• Square photos work best</Text>
-          <Text style={styles.tipText}>• Avoid group photos</Text>
+              iconColor={c.accent.error}
+              surface={c.background.secondary}
+              borderColor={c.border.subtle}
+              textColor={c.accent.error}
+            />
+          ) : null}
         </View>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
+function ActionButton({
+  icon,
+  label,
+  onPress,
+  disabled,
+  iconColor,
+  surface,
+  borderColor,
+  textColor,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  onPress: () => void;
+  disabled?: boolean;
+  iconColor: string;
+  surface: string;
+  borderColor: string;
+  textColor: string;
+}) {
+  return (
+    <TouchableOpacity
+      style={[
+        styles.actionButton,
+        { backgroundColor: surface, borderColor },
+        disabled && styles.disabled,
+      ]}
+      onPress={onPress}
+      disabled={disabled}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+    >
+      <Ionicons name={icon} size={22} color={iconColor} />
+      <Text style={[styles.actionText, { color: textColor }]}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background.primary,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+    paddingVertical: spacing.sm,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border.subtle,
+  },
+  iconButton: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   title: {
+    flex: 1,
+    textAlign: 'center',
     fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.semibold as any,
-    color: colors.text.primary,
+    fontWeight: typography.fontWeight.semibold,
   },
   saveButton: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    minWidth: 56,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
   },
-  saveButtonDisabled: {
+  disabled: {
     opacity: 0.5,
   },
   saveText: {
     fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.semibold as any,
-    color: colors.accent.primary,
-  },
-  saveTextDisabled: {
-    color: colors.text.secondary,
+    fontWeight: typography.fontWeight.semibold,
   },
   content: {
-    flex: 1,
     padding: spacing.lg,
+    paddingBottom: spacing.xxxl,
   },
   avatarContainer: {
     alignItems: 'center',
     marginBottom: spacing.xl,
-    position: 'relative',
   },
   avatar: {
     width: 200,
     height: 200,
     borderRadius: 100,
-    backgroundColor: colors.background.secondary,
   },
   avatarPlaceholder: {
     width: 200,
     height: 200,
     borderRadius: 100,
-    backgroundColor: colors.background.secondary,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
-    borderColor: colors.border.subtle,
     borderStyle: 'dashed',
   },
   changeIndicator: {
     position: 'absolute',
     bottom: 10,
     right: 10,
-    backgroundColor: colors.background.primary,
     borderRadius: 12,
     padding: 2,
   },
   actionsContainer: {
     gap: spacing.md,
-    marginBottom: spacing.xl,
   },
   actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: spacing.md,
     padding: spacing.lg,
-    backgroundColor: colors.background.secondary,
-    borderRadius: 12,
+    borderRadius: borderRadius.md,
     borderWidth: 1,
-    borderColor: colors.border.subtle,
-  },
-  actionIcon: {
-    marginRight: spacing.md,
   },
   actionText: {
     fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.medium as any,
-    color: colors.text.primary,
-  },
-  removeText: {
-    color: colors.accent.error,
-  },
-  tipsContainer: {
-    backgroundColor: colors.background.secondary,
-    padding: spacing.lg,
-    borderRadius: 12,
-    marginBottom: spacing.xl,
-  },
-  tipsTitle: {
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.semibold as any,
-    color: colors.text.primary,
-    marginBottom: spacing.sm,
-  },
-  tipText: {
-    fontSize: 14,
-    color: colors.text.secondary,
-    marginBottom: spacing.xs,
-    lineHeight: 20,
+    fontWeight: typography.fontWeight.medium,
   },
 });
-
-
-
-
-
-

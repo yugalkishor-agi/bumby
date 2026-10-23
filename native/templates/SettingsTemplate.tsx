@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   TouchableOpacity,
   Switch,
   SafeAreaView,
@@ -55,6 +54,10 @@ export function createSettingsScreen(config: SettingsTemplateProps) {
     const [selectedValues, setSelectedValues] = useState<Record<string, any>>({});
     const [savingKeys, setSavingKeys] = useState<Record<string, boolean>>({});
 
+    // Keys the user has already changed. The initial load must not overwrite
+    // them - otherwise a slow read clobbers an optimistic update.
+    const dirtyKeysRef = useRef<Set<string>>(new Set());
+
     const allItems = useMemo(() => config.sections.flatMap((section) => section.items), []);
 
     useEffect(() => {
@@ -67,6 +70,8 @@ export function createSettingsScreen(config: SettingsTemplateProps) {
     }, [intro]);
 
     useEffect(() => {
+      let cancelled = false;
+
       const loadPersistedValues = async () => {
         if (!user?.userId) return;
 
@@ -77,11 +82,14 @@ export function createSettingsScreen(config: SettingsTemplateProps) {
             settingsService.getNotificationPreferences(user.userId).catch(() => ({} as any)),
           ]);
 
+          if (cancelled) return;
+
           const nextToggles: Record<string, boolean> = {};
           const nextSelected: Record<string, any> = {};
 
           allItems.forEach((item) => {
             if (!item.settingKey) return;
+            if (dirtyKeysRef.current.has(item.settingKey)) return;
 
             const scope = item.settingScope || 'settings';
             const source = scope === 'privacy' ? privacy : scope === 'notifications' ? notifications : settings;
@@ -96,18 +104,30 @@ export function createSettingsScreen(config: SettingsTemplateProps) {
             }
 
             if (item.type === 'action' && item.settingValue !== undefined) {
-              nextSelected[item.settingKey] = persistedValue;
+              if (persistedValue !== undefined) {
+                nextSelected[item.settingKey] = persistedValue;
+              } else if (!(item.settingKey in nextSelected)) {
+                // Nothing persisted (or the read failed) - fall back to the
+                // first declared option so the group always shows a selection.
+                nextSelected[item.settingKey] = item.settingValue;
+              }
             }
           });
 
-          setToggleValues(nextToggles);
-          setSelectedValues(nextSelected);
+          if (cancelled) return;
+
+          setToggleValues((prev) => ({ ...nextToggles, ...prev }));
+          setSelectedValues((prev) => ({ ...nextSelected, ...prev }));
         } catch (error) {
           console.error('Failed to load template settings values:', error);
         }
       };
 
-      loadPersistedValues();
+      void loadPersistedValues();
+
+      return () => {
+        cancelled = true;
+      };
     }, [allItems, user?.userId]);
 
     const persistValue = async (item: SettingItem, value: any) => {
@@ -134,6 +154,7 @@ export function createSettingsScreen(config: SettingsTemplateProps) {
       const previous = toggleValues[key] ?? !!item.value;
       if (savingKeys[key]) return;
 
+      dirtyKeysRef.current.add(key);
       setSavingKeys((prev) => ({ ...prev, [key]: true }));
       setToggleValues((prev) => ({ ...prev, [key]: value }));
 
@@ -163,6 +184,7 @@ export function createSettingsScreen(config: SettingsTemplateProps) {
 
       if (item.type === 'action' && item.settingKey && item.settingValue !== undefined) {
         const previous = selectedValues[item.settingKey];
+        dirtyKeysRef.current.add(item.settingKey);
         setSavingKeys((prev) => ({ ...prev, [key]: true }));
         setSelectedValues((prev) => ({ ...prev, [item.settingKey!]: item.settingValue }));
         try {
@@ -204,7 +226,7 @@ export function createSettingsScreen(config: SettingsTemplateProps) {
               <Ionicons
                 name={iconName}
                 size={20}
-                color={item.danger ? '#F87171' : themeColors.accent.primary}
+                color={item.danger ? themeColors.accent.error : themeColors.accent.primary}
               />
             </View>
 
@@ -225,12 +247,18 @@ export function createSettingsScreen(config: SettingsTemplateProps) {
               value={toggleValue}
               onValueChange={(value) => handleToggle(item, value)}
               trackColor={{ false: themeColors.border.light, true: `${themeColors.accent.primary}66` }}
-              thumbColor={toggleValue ? '#FFFFFF' : themeColors.text.secondary}
+              thumbColor={toggleValue ? themeColors.accent.onAccent : themeColors.text.secondary}
               disabled={isSaving || item.disabled}
             />
           ) : (
             <Ionicons
-              name={isSelectedAction ? 'checkmark-circle' : 'chevron-forward'}
+              name={
+                item.type === 'action'
+                  ? isSelectedAction
+                    ? 'checkmark-circle'
+                    : 'ellipse-outline'
+                  : 'chevron-forward'
+              }
               size={20}
               color={item.disabled ? themeColors.text.muted : isSelectedAction ? themeColors.accent.primary : themeColors.text.muted}
             />
@@ -372,7 +400,7 @@ const createStyles = (themeColors: ReturnType<typeof useColors>) =>
       backgroundColor: `${themeColors.accent.primary}16`,
     },
     dangerIconWrap: {
-      backgroundColor: 'rgba(248, 113, 113, 0.12)',
+      backgroundColor: `${themeColors.accent.error}1F`,
     },
     settingLabelWrap: {
       flex: 1,
@@ -408,21 +436,9 @@ const createStyles = (themeColors: ReturnType<typeof useColors>) =>
       fontWeight: '700',
       color: themeColors.text.secondary,
       letterSpacing: 0.2,
-    },    savingBadge: {
-      paddingHorizontal: 10,
-      paddingVertical: 6,
-      borderRadius: 999,
-      backgroundColor: `${themeColors.accent.primary}18`,
-      borderWidth: 1,
-      borderColor: `${themeColors.accent.primary}36`,
-    },
-    savingBadgeText: {
-      fontSize: 12,
-      fontWeight: '700',
-      color: themeColors.accent.primary,
     },
     dangerText: {
-      color: '#F87171',
+      color: themeColors.accent.error,
     },
   });
 

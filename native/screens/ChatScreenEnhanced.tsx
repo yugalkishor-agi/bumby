@@ -14,7 +14,6 @@ import { onSnapshot, doc, updateDoc, serverTimestamp, deleteField, collection, q
 import { db } from '../config/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useMessages } from '../hooks/useMessages';
-import { useChatPreferences } from '../hooks/useChatPreferences';
 import { userService } from '../services/user.service';
 import { settingsService } from '../services/settings.service';
 import type { PrivacySettings } from '../services/settings.service';
@@ -25,26 +24,24 @@ import MessageList from '../components/chat/MessageList';
 import Composer from '../components/chat/Composer';
 import MessageBubble from '../components/chat/MessageBubble';
 import { useChatCache } from '../hooks/useChatCache';
-import { useChatReactions } from '../hooks/chat/useChatReactions';
 import { useChatThemedStyles } from '../hooks/chat/useChatThemedStyles';
 import { useChatSeenState } from '../hooks/chat/useChatSeenState';
+import ChatCallButtons from '../components/call/ChatCallButtons';
 import { useChatMeta } from '../hooks/chat/useChatMeta';
-import PinnedBanner, { PinnedMessageMeta } from '../components/chat/PinnedBanner';
 import ShareSheet from '../components/chat/ShareSheet';
 import GalleryComposerSheet from '../components/chat/GalleryComposerSheet';
 import PollComposer from '../components/chat/PollComposer';
 import LocationShareSheet from '../components/chat/LocationShareSheet';
 import MessageActionsSheet from '../components/chat/MessageActionsSheet';
 import { VerifiedBadge } from '../components/ui/VerifiedBadge';
-import MoreReactionsPicker from '../components/chat/MoreReactionsPicker';
 import StickerGifPicker from '../components/chat/StickerGifPicker';
 import { MessageForwardModal } from '../components/chat/MessageForwardModal';
 import { Avatar } from '../components/ui/Avatar';
 import { MentionAutocomplete } from '../components/ui/MentionAutocomplete';
-import { DEFAULT_REACTIONS, QUICK_REACTION_KEY, getChatAccent, getChatGradient } from '../constants/chat';
-import type { ActionMenuAnchor, ChatMessage, ChatReactionUsersMap } from '../types/chat';
+import { getChatAccent, getChatGradient } from '../constants/chat';
+import type { ActionMenuAnchor, ChatMessage } from '../types/chat';
 import chatScreenStyles from './chat/chatScreen.styles';
-import type { ChatRouteSeedUser, ChatScreenRouteProp, DisplayMessage, DisplayMessageCacheEntry, PickerTab, PinnedState, StickerPick } from './chat/chatScreen.types';
+import type { ChatRouteSeedUser, ChatScreenRouteProp, DisplayMessage, DisplayMessageCacheEntry, PickerTab, StickerPick } from './chat/chatScreen.types';
 import { buildDisplayMessageSignature, formatDayTimeLabel as formatDayTimeLabelValue, formatMessageTime, formatPresenceTime as formatPresenceTimeValue, formatSeenAge as formatSeenAgeValue, getDayKey as getDayKeyValue, MESSAGE_TIME_GAP_SEPARATOR_MS, stabilizeChatTextForRender, toTimestampMs } from './chat/chatScreen.utils';
 import { useChatScreenStore } from "./ChatScreenEnhanced/useChatScreenStore";
 import { Image } from 'expo-image';
@@ -89,14 +86,27 @@ export default function ChatScreen() {
 
   const conversationId = useChatScreenStore(s => s.conversationId);
     const setConversationId = useChatScreenStore(s => s.setConversationId);
+    // Resolves once the conversation document is known to exist. The inbox
+    // navigates with the deterministic id straight away, so the document is
+    // created in the background; sending waits for this to settle.
+    const conversationReadyRef = useRef<Promise<string> | null>(null);
 
   // The chat store is a module-level singleton shared by every conversation.
-  // Wipe its per-conversation fields when this screen unmounts so the next
-  // chat opened never sees pinned/hidden/edited state from the previous one.
+  // Seed conversationId synchronously from route params so useMessages never
+  // fires with the previous conversation's ID or null on the first render.
+  // Reset all per-conversation fields on unmount.
   useEffect(() => {
+    if (seededConversationId) {
+      useChatScreenStore.getState().setConversationId(seededConversationId);
+    } else {
+      // No id in params yet — clear so we don't show stale data from prev chat
+      useChatScreenStore.getState().setConversationId(null);
+    }
     return () => {
       useChatScreenStore.getState().resetForConversation();
+      useChatScreenStore.getState().setConversationId(null);
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const { messages: chatMessages, loading, loadingMore, sendMessage: sendMsg, markAsRead, loadOlderMessages, connectionState: messagesConnectionState, pendingMessageCount } = useMessages(conversationId, {
     initialLimit: 24,
@@ -129,9 +139,6 @@ export default function ChatScreen() {
     const setReplyingTo = useChatScreenStore(s => s.setReplyingTo);
   const otherUserTyping = useChatScreenStore(s => s.otherUserTyping);
     const setOtherUserTyping = useChatScreenStore(s => s.setOtherUserTyping);
-  const favoriteReactions = useChatScreenStore(s => s.favoriteReactions);
-    const setFavoriteReactions = useChatScreenStore(s => s.setFavoriteReactions);
-  const { quickReactionEmoji, setQuickReactionEmoji, allowSeenHaptics, preferStrongVibration } = useChatPreferences(user?.userId, favoriteReactions);
   const visibleMessageIds = useChatScreenStore(s => s.visibleMessageIds);
     const setVisibleMessageIds = useChatScreenStore(s => s.setVisibleMessageIds);
   const actionsVisible = useChatScreenStore(s => s.actionsVisible);
@@ -144,28 +151,16 @@ export default function ChatScreen() {
     const setPollComposerVisible = useChatScreenStore(s => s.setPollComposerVisible);
   const locationSheetVisible = useChatScreenStore(s => s.locationSheetVisible);
     const setLocationSheetVisible = useChatScreenStore(s => s.setLocationSheetVisible);
-  const moreReactionsVisible = useChatScreenStore(s => s.moreReactionsVisible);
-    const setMoreReactionsVisible = useChatScreenStore(s => s.setMoreReactionsVisible);
   const activeActionMessage = useChatScreenStore(s => s.activeActionMessage);
     const setActiveActionMessage = useChatScreenStore(s => s.setActiveActionMessage);
-  const reactionViewer = useChatScreenStore(s => s.reactionViewer);
-    const setReactionViewer = useChatScreenStore(s => s.setReactionViewer);
-  const reactionUsersById = useChatScreenStore(s => s.reactionUsersById);
-    const setReactionUsersById = useChatScreenStore(s => s.setReactionUsersById);
   const seenUsersById = useChatScreenStore(s => s.seenUsersById);
     const setSeenUsersById = useChatScreenStore(s => s.setSeenUsersById);
   const actionMenuAnchor = useChatScreenStore(s => s.actionMenuAnchor);
     const setActionMenuAnchor = useChatScreenStore(s => s.setActionMenuAnchor);
-  const pinned = useChatScreenStore(s => s.pinned);
-    const setPinned = useChatScreenStore(s => s.setPinned);
-  const pinnedCursor = useChatScreenStore(s => s.pinnedCursor);
-    const setPinnedCursor = useChatScreenStore(s => s.setPinnedCursor);
   const hiddenIds = useChatScreenStore(s => s.hiddenIds);
     const setHiddenIds = useChatScreenStore(s => s.setHiddenIds);
   const textOverrides = useChatScreenStore(s => s.textOverrides);
     const setTextOverrides = useChatScreenStore(s => s.setTextOverrides);
-  const editingId = useChatScreenStore(s => s.editingId);
-    const setEditingId = useChatScreenStore(s => s.setEditingId);
   const stickerPickerVisible = useChatScreenStore(s => s.stickerPickerVisible);
     const setStickerPickerVisible = useChatScreenStore(s => s.setStickerPickerVisible);
   const stickerPickerTab = useChatScreenStore(s => s.stickerPickerTab);
@@ -174,12 +169,6 @@ export default function ChatScreen() {
     const setForwardModalVisible = useChatScreenStore(s => s.setForwardModalVisible);
   const forwardPayload = useChatScreenStore(s => s.forwardPayload);
     const setForwardPayload = useChatScreenStore(s => s.setForwardPayload);
-  const editedMeta = useChatScreenStore(s => s.editedMeta);
-    const setEditedMeta = useChatScreenStore(s => s.setEditedMeta);
-  const editingReactionIndex = useChatScreenStore(s => s.editingReactionIndex);
-    const setEditingReactionIndex = useChatScreenStore(s => s.setEditingReactionIndex);
-  const editingPreview = useChatScreenStore(s => s.editingPreview);
-    const setEditingPreview = useChatScreenStore(s => s.setEditingPreview);
   const chatTheme = useChatScreenStore(s => s.chatTheme);
     const setChatTheme = useChatScreenStore(s => s.setChatTheme);
   const seenClockMs = useChatScreenStore(s => s.seenClockMs);
@@ -210,7 +199,6 @@ export default function ChatScreen() {
   const lastContentHeightRef = useRef(0);
   const lastAutoScrollMessageIdRef = useRef<string | null>(null);
   const initialLatestAnchoredRef = useRef(false);
-  const lastSeenHapticMessageIdRef = useRef<string | null>(null);
   const lastScreenshotAlertAtRef = useRef(0);
   const timelineSwipeStartRef = useRef(0);
   const timelineGestureFromBubbleRef = useRef(false);
@@ -396,6 +384,25 @@ export default function ChatScreen() {
           setLoadingUser(true);
         }
 
+        if (seededConversationId) {
+          // Show the chat right away. The inbox opens a conversation with the
+          // deterministic id without waiting for the network, so the document
+          // may not exist yet — resolve (and create) it in the background.
+          setConversationId((prev) => (prev === seededConversationId ? prev : seededConversationId));
+          conversationReadyRef.current = messageService
+            .ensureDirectConversation(user.userId, otherUserId, seededConversationId)
+            .then((resolvedId) => {
+              if (resolvedId && resolvedId !== seededConversationId) {
+                setConversationId((prev) => (prev === resolvedId ? prev : resolvedId));
+              }
+              return resolvedId;
+            })
+            .catch((error) => {
+              console.warn('Failed to prepare conversation:', error);
+              return seededConversationId;
+            });
+        }
+
         const userDataPromise = userService.getUser(otherUserId);
         userDataPromise.then((userData) => {
           setOtherUser(userData);
@@ -412,7 +419,6 @@ export default function ChatScreen() {
         setRequestMode(access.requiresRequest);
 
         if (seededConversationId) {
-          setConversationId((prev) => (prev === seededConversationId ? prev : seededConversationId));
           return;
         }
 
@@ -632,26 +638,6 @@ export default function ChatScreen() {
     }
   };
 
-  const applyEdit = (text: string) => {
-    if (!editingId) return false;
-
-    setTextOverrides((prev) => ({ ...prev, [editingId]: text }));
-
-    setEditedMeta((prev) => {
-      if (prev[editingId]) return prev;
-      const source = [...chatMessages, ...cachedMessages].find(
-        (m) => m.messageId === editingId
-      );
-      const original = source?.text ?? '';
-      if (!original) return prev;
-      return { ...prev, [editingId]: { original } };
-    });
-
-    setEditingId(null);
-    setEditingPreview(null);
-    return true;
-  };
-
   const handleSendMessage = async (inputText?: string) => {
     if (!user || !conversationId || loadingUser) return;
     if (!canMessage) {
@@ -664,11 +650,6 @@ export default function ChatScreen() {
     if (!text) return;
     forceAutoScrollRef.current = true;
     sendAnchorUntilRef.current = Date.now() + 260;
-    if (applyEdit(text)) {
-      messageTextRef.current = '';
-      setMessageText('');
-      return;
-    }
 
     const replyPayload = replyingTo?.messageId
       ? {
@@ -678,6 +659,17 @@ export default function ChatScreen() {
           senderUsername: replyingTo.senderUsername,
         }
       : undefined;
+
+    // The conversation document is created in the background when the chat was
+    // opened straight from the inbox — wait for it so the first message is not
+    // rejected with "Conversation not found".
+    if (conversationReadyRef.current) {
+      try {
+        await conversationReadyRef.current;
+      } catch {
+        // ignore — the send below reports the real failure
+      }
+    }
 
     messageTextRef.current = '';
     setMessageText('');
@@ -696,13 +688,14 @@ export default function ChatScreen() {
 
     try {
       await sendMsg(text, undefined, replyPayload);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to send message:', error);
       setMessageText(text);
       messageTextRef.current = text;
       if (replyPayload) {
         setReplyingTo(replyPayload);
       }
+      Alert.alert('Message failed', error?.message || 'Could not send message. Please try again.');
     }
   };
 
@@ -868,39 +861,13 @@ export default function ChatScreen() {
   }, [conversationId, user]);
 
 
-    const {
-    getMergedReactionsForMessage,
-    getCurrentUserReaction,
-    applyReactionForMessage,
-  } = useChatReactions({
-    conversationId,
-    viewerId: user?.userId,
-  });
-  const handleBubbleTap = useCallback((item: ChatMessage) => {
-    const messageId = String(item?.messageId || '');
-    if (!messageId) return;
-
-    const now = Date.now();
-    const lastTap = lastTapRef.current;
-    const isDoubleTap = lastTap.messageId === messageId && now - lastTap.timestamp < 280;
-
-    if (isDoubleTap) {
-      void applyReactionForMessage(item, quickReactionEmoji);
-      lastTapRef.current = { messageId: null, timestamp: 0 };
-      return;
-    }
-
-    lastTapRef.current = { messageId, timestamp: now };
-  }, [applyReactionForMessage, quickReactionEmoji]);
+  const handleBubbleTap = useCallback((_item: ChatMessage) => {
+    // tap handled — no reaction on double tap
+  }, []);
 
   const handleBubbleReply = useCallback((item: ChatMessage) => {
     setReplyingTo(item);
   }, []);
-
-  const updateDefaultReaction = useCallback((emo: string) => {
-    setQuickReactionEmoji(emo);
-    AsyncStorage.setItem(QUICK_REACTION_KEY, emo).catch(() => undefined);
-  }, [setQuickReactionEmoji]);
 
   const handleBubbleActions = useCallback((item: ChatMessage, anchor?: ActionMenuAnchor) => {
     lastTapRef.current = { messageId: null, timestamp: 0 };
@@ -965,24 +932,12 @@ export default function ChatScreen() {
     }
   }, [conversationId, user?.userId]);
 
-  const togglePin = useCallback((item: ChatMessage) => {
-    setPinned((prev) => {
-      const exists = prev.ids.includes(item.messageId);
-      return { ids: exists ? prev.ids.filter((id) => id !== item.messageId) : [...prev.ids, item.messageId] };
-    });
-  }, []);
-
   const handleAction = useCallback(async (action: string) => {
     const msg = activeActionMessage;
     if (!msg) return;
 
     if (action === 'reply') {
       handleBubbleReply(msg);
-      return;
-    }
-
-    if (action === 'pin') {
-      togglePin(msg);
       return;
     }
 
@@ -1008,19 +963,12 @@ export default function ChatScreen() {
       return;
     }
 
-    if (action === 'edit') {
-      if (!msg.text) return;
-      setEditedMeta((prev) =>
-        prev[msg.messageId]
-          ? prev
-          : {
-              ...prev,
-              [msg.messageId]: { original: msg.text || '' },
-            }
-      );
-      setMessageText(msg.text || '');
-      setEditingId(msg.messageId);
-      setEditingPreview(msg.text || '');
+    if (action === 'copy') {
+      if (msg.text) {
+        import('expo-clipboard').then(({ setStringAsync }) => {
+          setStringAsync(msg.text || '').catch(() => undefined);
+        }).catch(() => undefined);
+      }
       return;
     }
 
@@ -1045,7 +993,7 @@ export default function ChatScreen() {
       });
       setForwardModalVisible(true);
     }
-  }, [activeActionMessage, conversationId, handleBubbleReply, togglePin, user?.userId]);
+  }, [activeActionMessage, conversationId, handleBubbleReply, user?.userId]);
 
   const formatTime = useCallback((timestamp: Message['createdAt']) => formatMessageTime(timestamp), []);
   const getDayKey = useCallback((timestamp: Message['createdAt']) => getDayKeyValue(timestamp), []);
@@ -1069,34 +1017,31 @@ export default function ChatScreen() {
     const mapped = base.map((m) => {
       const isDeleted = m.isDeleted === true;
       const override = typeof textOverrides[m.messageId] === 'string' && !isDeleted ? textOverrides[m.messageId] : undefined;
-      const pinnedMessage = pinned.ids.includes(m.messageId);
       const cached = prevCache.get(m.messageId);
 
       if (
         cached &&
         cached.source === m &&
         cached.overrideText === override &&
-        cached.pinned === pinnedMessage &&
         cached.isDeleted === isDeleted
       ) {
         nextCache.set(m.messageId, cached);
         return cached.message;
       }
 
-      const signature = buildDisplayMessageSignature(m, override, pinnedMessage, isDeleted);
+      const signature = buildDisplayMessageSignature(m, override, false, isDeleted);
       if (cached && cached.signature === signature) {
         const reused: DisplayMessageCacheEntry = {
           ...cached,
-          source: m,
+          source: m as DisplayMessage,
           overrideText: override,
-          pinned: pinnedMessage,
+          pinned: !!(m as any).pinned,
           isDeleted,
         };
         nextCache.set(m.messageId, reused);
         return cached.message;
       }
 
-      const isEdited = !isDeleted && typeof override === 'string' && override !== m.text;
       const baseTextRaw = override ?? (isDeleted ? 'This message was unsent' : m.text);
       const safeText = typeof baseTextRaw === 'string' ? baseTextRaw : String(baseTextRaw ?? '');
       const boundedText = safeText.length > 1500 ? `${safeText.slice(0, 1500)}...` : safeText;
@@ -1112,117 +1057,27 @@ export default function ChatScreen() {
         gif: isDeleted ? undefined : m.gif,
         sticker: isDeleted ? undefined : m.sticker,
         sharedContent: isDeleted ? undefined : m.sharedContent,
-        isEdited,
-        pinned: pinnedMessage,
       };
 
       nextCache.set(m.messageId, {
-        source: m,
+        source: m as DisplayMessage,
         overrideText: override,
-        pinned: pinnedMessage,
+        pinned: !!(m as any).pinned,
         isDeleted,
         signature,
-        message,
+        message: message as DisplayMessage,
       });
       return message;
     });
 
     displayMessageCacheRef.current = nextCache;
     return mapped;
-  }, [buildDisplayMessageSignature, chatMessages, cachedMessages, textOverrides, pinned.ids]);
+  }, [buildDisplayMessageSignature, chatMessages, cachedMessages, textOverrides]);
   const finalData = useMemo(
     () => displayMessages.filter((m) => !hiddenIds.has(m.messageId)),
     [displayMessages, hiddenIds]
   );
   const messageById = useMemo(() => new Map(finalData.map((m) => [m.messageId, m])), [finalData]);
-
-  const reactionViewerMessage = useMemo(() => {
-    if (!reactionViewer.messageId) return null;
-    return messageById.get(reactionViewer.messageId) || null;
-  }, [messageById, reactionViewer.messageId]);
-
-  const reactionViewerMap = useMemo(() => {
-    if (!reactionViewerMessage) return {} as Record<string, string>;
-    return getMergedReactionsForMessage(reactionViewerMessage);
-  }, [getMergedReactionsForMessage, reactionViewerMessage]);
-
-  const reactionViewerRows = useMemo(
-    () =>
-      Object.entries(reactionViewerMap)
-        .filter(([uid, emoji]) => !!uid && typeof emoji === 'string' && emoji.trim().length > 0)
-        .map(([uid, emoji]) => ({ userId: uid, emoji }))
-        .sort((a, b) => a.userId.localeCompare(b.userId)),
-    [reactionViewerMap]
-  );
-
-  useEffect(() => {
-    if (!reactionViewer.visible || reactionViewerRows.length === 0) return;
-    const missingIds = reactionViewerRows
-      .map((row) => row.userId)
-      .filter((id) => id && !reactionUsersById[id]);
-
-    if (missingIds.length === 0) return;
-
-    let cancelled = false;
-    (async () => {
-      const selfEntries =
-        user?.userId && missingIds.includes(user.userId)
-          ? ({ [user.userId]: user as User } as Record<string, User | null>)
-          : {};
-      const remoteIds = missingIds.filter((id) => id !== user?.userId);
-      const fetchedUsers = remoteIds.length > 0 ? await userService.getUsersByIds(remoteIds) : {};
-
-      if (cancelled) return;
-      setReactionUsersById((prev) => ({
-        ...prev,
-        ...fetchedUsers,
-        ...selfEntries,
-      }));
-    })().catch(() => undefined);
-
-    return () => {
-      cancelled = true;
-    };
-  }, [reactionUsersById, reactionViewer.visible, reactionViewerRows, user]);
-
-  useEffect(() => {
-    if (finalData.length === 0) return;
-
-    const recent = finalData.slice(-140);
-    const missingIdsSet = new Set<string>();
-
-    recent.forEach((msg) => {
-      const merged = getMergedReactionsForMessage(msg);
-      Object.keys(merged).forEach((uid) => {
-        if (!uid || reactionUsersById[uid]) return;
-        missingIdsSet.add(uid);
-      });
-    });
-
-    const missingIds = Array.from(missingIdsSet).slice(0, 30);
-    if (missingIds.length === 0) return;
-
-    let cancelled = false;
-    (async () => {
-      const selfEntries =
-        user?.userId && missingIds.includes(user.userId)
-          ? ({ [user.userId]: user as User } as Record<string, User | null>)
-          : {};
-      const remoteIds = missingIds.filter((id) => id !== user?.userId);
-      const fetchedUsers = remoteIds.length > 0 ? await userService.getUsersByIds(remoteIds) : {};
-
-      if (cancelled) return;
-      setReactionUsersById((prev) => ({
-        ...prev,
-        ...fetchedUsers,
-        ...selfEntries,
-      }));
-    })().catch(() => undefined);
-
-    return () => {
-      cancelled = true;
-    };
-  }, [finalData, getMergedReactionsForMessage, reactionUsersById, user]);
 
   const themeAccent = useMemo(() => getChatAccent(chatTheme), [chatTheme]);
   const activeGradient = useMemo<[string, string, ...string[]]>(() => getChatGradient(chatTheme), [chatTheme]);
@@ -1239,26 +1094,8 @@ export default function ChatScreen() {
 
 
 
-  const pinnedMeta: PinnedMessageMeta[] = useMemo(() => {
-    if (!pinned.ids.length) return [];
-    const orderedIds = [...pinned.ids].reverse();
-    const byId = new Map(finalData.map((m) => [m.messageId, m]));
-    return orderedIds
-      .map((id) => byId.get(id))
-      .filter(Boolean)
-      .map((m) => ({ messageId: m!.messageId, preview: m!.text || m!.title || "Pinned", createdAt: m!.createdAt }));
-  }, [pinned.ids, finalData]);
-
-  useEffect(() => {
-    if (pinnedMeta.length === 0) {
-      setPinnedCursor(0);
-      return;
-    }
-    setPinnedCursor((prev) => Math.min(prev, pinnedMeta.length - 1));
-  }, [pinnedMeta.length]);
-
   const handleCallComingSoon = useCallback(() => {
-    Alert.alert('Coming soon', 'Voice and video calling will be available in an upcoming update.');
+    // Replaced by Zego call integration
   }, []);
 
   const scrollToLatest = useCallback((animated: boolean = false) => {
@@ -1469,19 +1306,9 @@ export default function ChatScreen() {
     }
   };
 
-  const handlePinnedPress = (id?: string) => {
-    if (!pinnedMeta.length) return;
-    const target = id ? pinnedMeta.find((p) => p.messageId === id) : pinnedMeta[pinnedCursor];
-    if (!target) return;
-    scrollToMessage(target.messageId);
-    setPinnedCursor((prev) => (prev + 1) % pinnedMeta.length);
-  };
-
   const renderMessage = useCallback(({ item, index }: { item: ChatMessage; index: number }) => {
     const isMe = item.senderId === user?.userId;
     const isLatestMine = isMe && index === finalData.length - 1;
-    const reaction = getCurrentUserReaction(item);
-    const mergedReactions = getMergedReactionsForMessage(item);
     const isVisible = true;
     const previousMessage = index > 0 ? finalData[index - 1] : null;
     const nextMessage = index < finalData.length - 1 ? finalData[index + 1] : null;
@@ -1579,9 +1406,6 @@ export default function ChatScreen() {
           seenLabel={latestSeenReceipt.label}
           seenReaders={seenReaders}
           isVisible={isVisible}
-          reaction={reaction}
-          reactions={mergedReactions}
-          reactionUsersById={reactionUsersById}
           isGroupConversation={isGroupConversation}
           otherUserAvatar={isGroupConversation ? item.senderAvatarURL : otherUser?.avatarURL}
           otherUserId={isGroupConversation ? item.senderId : otherUserId}
@@ -1599,9 +1423,7 @@ export default function ChatScreen() {
           formatTime={formatTime}
           canShowReadReceipts={!requestMode && otherUserPrivacy?.showReadReceipts !== false}
           onBubbleTap={handleBubbleTap}
-          onReactionPress={(msg) => setReactionViewer({ visible: true, messageId: msg?.messageId || null })}
           onReply={handleBubbleReply}
-          onPinToggle={togglePin}
           onLongPressAction={handleBubbleActions}
           onQuickForward={(msg) => {
             const normType =
@@ -1626,12 +1448,6 @@ export default function ChatScreen() {
           }}
           onCollaborationAccept={handleAcceptCollaborationFromChat}
           onCollaborationDecline={handleDeclineCollaborationFromChat}
-          onEditedPress={(msg) => {
-            const meta = editedMeta[msg.messageId];
-            if (!meta) return;
-            Alert.alert('Edited message', `Before:\n${meta.original}\n\nNow:\n${msg.text || ''}`);
-          }}
-          isEdited={Boolean(itemWithTypeFallback.isEdited)}
           isFirstInGroup={isFirstInGroup}
           isLastInGroup={isLastInGroup}
           showTimelineTime
@@ -1646,7 +1462,7 @@ export default function ChatScreen() {
         />
       </View>
     );
-  }, [user?.userId, finalData, getDayKey, formatDayTimeLabel, toTimestampMs, messageById, getCurrentUserReaction, getMergedReactionsForMessage, handlePollVote, openMaps, isGroupConversation, otherUser?.avatarURL, otherUserId, formatTime, handleBubbleTap, handleBubbleReply, togglePin, handleBubbleActions, handleAcceptCollaborationFromChat, handleDeclineCollaborationFromChat, editedMeta, timelineSwipeTranslateX, timelineTimeOpacity, handleBubbleTouchStateChange, groupSeenReadersByMessageId, seenUsersById, reactionUsersById, themeAccent, themedStyles]);
+  }, [user?.userId, finalData, getDayKey, formatDayTimeLabel, toTimestampMs, messageById, handlePollVote, openMaps, isGroupConversation, otherUser?.avatarURL, otherUserId, formatTime, handleBubbleTap, handleBubbleReply, handleBubbleActions, handleAcceptCollaborationFromChat, handleDeclineCollaborationFromChat, timelineSwipeTranslateX, timelineTimeOpacity, handleBubbleTouchStateChange, groupSeenReadersByMessageId, seenUsersById, themeAccent, themedStyles]);
   const handleListScroll = useCallback<NonNullable<FlashListProps<ChatMessage>['onScroll']>>((event) => {
     const { contentOffset, layoutMeasurement, contentSize } = event.nativeEvent;
 
@@ -1793,13 +1609,15 @@ export default function ChatScreen() {
             </View>
           </TouchableOpacity>
           <View style={styles.headerActions}>
-            <TouchableOpacity style={themedStyles.headerButton} onPress={handleCallComingSoon}>
-              <Ionicons name="call-outline" size={22} color={themeAccent} />
-            </TouchableOpacity>
-            <TouchableOpacity style={themedStyles.headerButton} onPress={handleCallComingSoon}>
-              <Ionicons name="videocam-outline" size={24} color={themeAccent} />
-            </TouchableOpacity>
-
+            <ChatCallButtons
+              isGroupConversation={isGroupConversation}
+              otherUserId={otherUserId}
+              otherUser={otherUser}
+              groupParticipantIds={groupMeta?.participantIds}
+              conversationId={conversationId}
+              accentColor={themeAccent}
+              disabled={!user || loadingUser}
+            />
           </View>
         </View>
       </BlurView>
@@ -1813,11 +1631,6 @@ export default function ChatScreen() {
           </View>
         </View>
       ) : null}
-      {pinnedMeta.length > 0 && (
-        <View style={[styles.contentFrame, styles.pinnedBannerFrame, { maxWidth: contentMaxWidth }]}>
-          <PinnedBanner pinned={pinnedMeta} activeIndex={pinnedCursor} onPress={handlePinnedPress} stylesRef={themedStyles} />
-        </View>
-      )}
 
       {loading && finalData.length === 0 ? (
         <ScreenSkeleton variant="chat" rows={6} />
@@ -1827,9 +1640,10 @@ export default function ChatScreen() {
           pointerEvents="auto"
           {...timelineSwipeResponder.panHandlers}
         >
-          <View style={[styles.contentFrame, { maxWidth: contentMaxWidth }]}>
+          <View style={[styles.messageListFrame, { maxWidth: contentMaxWidth }]}>
             <MessageList
               data={finalData}
+              extraData={`${chatMessages.length}:${(chatMessages[chatMessages.length - 1] as any)?.updatedAt?.seconds ?? (chatMessages[chatMessages.length - 1] as any)?.clientCreatedAtMs ?? 0}`}
               renderBubble={renderMessage}
               flatListRef={flatListRef}
               ListHeaderComponent={
@@ -1876,37 +1690,6 @@ export default function ChatScreen() {
         </View>
       )}
 
-      <MoreReactionsPicker
-        visible={moreReactionsVisible}
-        quickReactions={favoriteReactions}
-        activeReaction={activeActionMessage ? (getCurrentUserReaction(activeActionMessage) || quickReactionEmoji) : quickReactionEmoji}
-        defaultReaction={quickReactionEmoji}
-        selectedQuickIndex={editingReactionIndex}
-        onSelectedQuickIndexChange={setEditingReactionIndex}
-        onDefaultReactionChange={updateDefaultReaction}
-        onQuickReactionReplace={(index, emo) => {
-          setFavoriteReactions((prev) => {
-            const next = [...prev];
-            const previous = next[index];
-            next[index] = emo;
-            if (previous === quickReactionEmoji) {
-              updateDefaultReaction(emo);
-            }
-            return next;
-          });
-        }}
-        onSelect={(emo) => {
-          if (activeActionMessage) {
-            void applyReactionForMessage(activeActionMessage, emo);
-          }
-        }}
-        onClose={() => {
-          setMoreReactionsVisible(false);
-          setEditingReactionIndex(null);
-        }}
-        stylesRef={themedStyles}
-      />
-
       <GalleryComposerSheet
         visible={galleryComposerVisible}
         accentColor={themeAccent}
@@ -1935,80 +1718,13 @@ export default function ChatScreen() {
         stylesRef={themedStyles}
       />
 
-      <Modal
-        visible={reactionViewer.visible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setReactionViewer({ visible: false, messageId: null })}
-      >
-        <View style={styles.reactionsListBackdrop}>
-          <TouchableOpacity
-            style={StyleSheet.absoluteFillObject}
-            activeOpacity={1}
-            onPress={() => setReactionViewer({ visible: false, messageId: null })}
-          />
-          <View style={styles.reactionsListModal}>
-            <View style={styles.reactionsListHeader}>
-              <Text style={styles.reactionsListTitle}>Reactions</Text>
-              <TouchableOpacity onPress={() => setReactionViewer({ visible: false, messageId: null })}>
-                <Ionicons name="close" size={18} color="#cbd5e1" />
-              </TouchableOpacity>
-            </View>
-            {reactionViewerRows.length === 0 ? (
-              <Text style={styles.reactionsListEmpty}>No reactions yet</Text>
-            ) : (
-              <FlashList estimatedItemSize={100}
-                data={reactionViewerRows}
-                keyExtractor={(row: { userId: string }, index: number) => row.userId + '-' + String(index)}
-                showsVerticalScrollIndicator={false}
-                contentContainerStyle={styles.reactionsListContent as any}
-                renderItem={({ item: row }: any) => {
-                  const profile = reactionUsersById[row.userId];
-                  const displayName = profile?.displayName || profile?.username || row.userId;
-                  const handle = profile?.username ? '@' + profile.username : row.userId;
-                  return (
-                    <View style={styles.reactionUserRow}>
-                      <Avatar source={profile?.avatarURL} size={36} fallbackText={displayName} />
-                      <View style={styles.reactionUserMeta}>
-                        <Text style={styles.reactionUserName} numberOfLines={1}>{displayName}</Text>
-                        <Text style={styles.reactionUserHandle} numberOfLines={1}>{handle}</Text>
-                      </View>
-                      <Text style={styles.reactionUserEmoji}>{row.emoji}</Text>
-                    </View>
-                  );
-                }}
-              />
-            )}
-          </View>
-        </View>
-      </Modal>
       <MessageActionsSheet
         visible={actionsVisible}
         onClose={() => {
           setActionsVisible(false);
           setActionMenuAnchor(null);
-          setEditingReactionIndex(null);
         }}
         onAction={handleAction}
-        reactions={favoriteReactions}
-        activeReaction={activeActionMessage ? (getCurrentUserReaction(activeActionMessage) || quickReactionEmoji) : quickReactionEmoji}
-        defaultReaction={quickReactionEmoji}
-        onReactionPress={(emo) => {
-          if (!activeActionMessage) return;
-          void applyReactionForMessage(activeActionMessage, emo);
-        }}
-        onDefaultReactionChange={updateDefaultReaction}
-        onMoreReactions={() => {
-          const defaultIndex = Math.max(0, favoriteReactions.indexOf(quickReactionEmoji));
-          setEditingReactionIndex(defaultIndex);
-          setMoreReactionsVisible(true);
-        }}
-        canEdit={
-          !!activeActionMessage &&
-          activeActionMessage.senderId === user?.userId &&
-          activeActionMessage.isDeleted !== true &&
-          (activeActionMessage.type === 'text' || (!activeActionMessage.type && !activeActionMessage.mediaType))
-        }
         canDeleteForEveryone={!!activeActionMessage && activeActionMessage.senderId === user?.userId && activeActionMessage.isDeleted !== true}
         anchor={actionMenuAnchor}
         stylesRef={themedStyles}
@@ -2034,27 +1750,6 @@ export default function ChatScreen() {
             sharedContent: forwardPayload.sharedContent,
           }}
         />
-      )}
-
-      {editingId && (
-        <View style={[themedStyles.editingBanner, styles.contentFrame, { maxWidth: contentMaxWidth }]}>
-          <View style={styles.editingBannerText}>
-            <Text style={themedStyles.editingBannerLabel}>Editing</Text>
-            <Text style={themedStyles.editingBannerPreview} numberOfLines={1}>
-              {editingPreview ||
-                (editingId && (textOverrides[editingId] ?? editedMeta[editingId]?.original)) ||
-                ''}
-            </Text>
-          </View>
-          <TouchableOpacity
-            onPress={() => {
-              setEditingId(null);
-              setEditingPreview(null);
-            }}
-          >
-            <Ionicons name="close" size={18} color="#94a3b8" />
-          </TouchableOpacity>
-        </View>
       )}
 
       {otherUserTyping && (
@@ -2124,16 +1819,3 @@ export default function ChatScreen() {
     </KeyboardAvoidingView>
   );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-

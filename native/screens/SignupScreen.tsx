@@ -68,7 +68,7 @@ export default function SignupScreen({ navigation }: any) {
         formData.username,
         formData.name
       );
-      Alert.alert("Account created!", "Welcome to Iris. Let's get started!");
+      Alert.alert("Account created!", "Welcome to Bumby. Let's get started!");
       // Navigation will happen automatically when auth state updates
     } catch (error: any) {
       Alert.alert("Signup failed", error.message || "Could not create account. Please try again.");
@@ -111,7 +111,7 @@ export default function SignupScreen({ navigation }: any) {
             <Ionicons name="chevron-back" size={24} color="#888" />
           </TouchableOpacity>
           <Image
-            source={require('../../public/Iris-logo.png')}
+            source={require('../../assets/Images/bumbylogo.png')}
             style={styles.logo}
             contentFit="contain"
           />
@@ -121,7 +121,7 @@ export default function SignupScreen({ navigation }: any) {
         <View style={styles.content}>
           <View style={styles.titleSection}>
             <Text style={styles.title}>Create Account</Text>
-            <Text style={styles.subtitle}>Join Iris today</Text>
+            <Text style={styles.subtitle}>Join Bumby today</Text>
           </View>
 
           <TouchableOpacity onPress={pickImage} style={styles.avatarContainer}>

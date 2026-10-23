@@ -35,7 +35,7 @@ const GuidelinesScreenComponent = createStaticContentScreen({
     <View>
       <Text style={styles.heading}>Community Guidelines</Text>
       <Text style={styles.intro}>
-        Welcome to Iris! Our community guidelines help keep our platform safe and welcoming for everyone.
+        Welcome to Bumby! Our community guidelines help keep our platform safe and welcoming for everyone.
       </Text>
 
       <Text style={styles.section}>Be Respectful</Text>
@@ -61,7 +61,7 @@ const GuidelinesScreenComponent = createStaticContentScreen({
 
       <Text style={styles.section}>Prohibited Content</Text>
       <Text style={styles.paragraph}>
-        The following is not allowed on Iris:{'\n'}
+        The following is not allowed on Bumby:{'\n'}
         • Illegal content or activities{'\n'}
         • Violence, gore, or self-harm{'\n'}
         • Sexual exploitation{'\n'}

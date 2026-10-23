@@ -42,6 +42,11 @@ export function useProfileData(
   const loadProfileRef = useRef<(force?: boolean) => Promise<void>>(async () => undefined);
   const loadProfileRunRef = useRef(0);
   const cacheHydratedKeyRef = useRef<string | null>(null);
+  const currentUserRef = useRef<any>(currentUser);
+
+  useEffect(() => {
+    currentUserRef.current = currentUser;
+  }, [currentUser?.userId, currentUser]);
 
   const toMillis = useCallback((value: any) => {
     if (!value) return 0;
@@ -176,6 +181,7 @@ export function useProfileData(
 
     const runId = ++loadProfileRunRef.current;
     const isLatestRun = () => loadProfileRunRef.current === runId;
+    const activeUser = currentUserRef.current;
 
     try {
       const hasSeededContent = !!profileUser || userPosts.length > 0 || userGlimpses.length > 0 || taggedPosts.length > 0 || highlights.length > 0;
@@ -191,23 +197,23 @@ export function useProfileData(
       if (shouldSkipSoftRefresh) return;
       if (!hasSeededContent) setLoading(true);
 
-      const primaryPostsPromise = postService.getUserPosts(displayUserId, 10, undefined, false, currentUser?.userId);
-      const primaryGlimpsesPromise = glimpseService.getUserGlimpses(displayUserId, 10, false, currentUser?.userId);
+      const primaryPostsPromise = postService.getUserPosts(displayUserId, 10, undefined, false, activeUser?.userId);
+      const primaryGlimpsesPromise = glimpseService.getUserGlimpses(displayUserId, 10, false, activeUser?.userId);
       const secondaryContentPromise = Promise.all([
         highlightService.getProfileHighlights(displayUserId, 12),
-        postService.getPostsByTaggedUser(displayUserId, 12, undefined, currentUser?.userId).catch(() => ({ posts: [] })),
-        glimpseService.getGlimpsesByTaggedUser(displayUserId, currentUser?.userId).then((items) => (items || []).slice(0, 12)).catch(() => []),
+        postService.getPostsByTaggedUser(displayUserId, 12, undefined, activeUser?.userId).catch(() => ({ posts: [] })),
+        glimpseService.getGlimpsesByTaggedUser(displayUserId, activeUser?.userId).then((items) => (items || []).slice(0, 12)).catch(() => []),
       ]);
-      const accessPromise = !isOwnProfile && currentUser
+      const accessPromise = !isOwnProfile && activeUser
         ? Promise.all([
             settingsService.getPrivacySettings(displayUserId).catch(() => null),
-            userService.isFollowingUser(currentUser.userId, displayUserId),
-            userService.isBlocked(currentUser.userId, displayUserId),
-            userService.hasRequestedFollow(currentUser.userId, displayUserId).catch(() => false),
+            userService.isFollowingUser(activeUser.userId, displayUserId),
+            userService.isBlocked(activeUser.userId, displayUserId),
+            userService.hasRequestedFollow(activeUser.userId, displayUserId).catch(() => false),
           ])
         : null;
 
-      const userData = isOwnProfile && currentUser ? currentUser : await userService.getUser(displayUserId);
+      const userData = isOwnProfile && activeUser ? activeUser : await userService.getUser(displayUserId);
 
       if (!isLatestRun()) return;
 
@@ -237,7 +243,7 @@ export function useProfileData(
       let nextPosts: any[] = [];
       let nextGlimpses: any[] = [];
 
-      if (!isOwnProfile && currentUser && accessPromise) {
+      if (!isOwnProfile && activeUser && accessPromise) {
         const optimisticPrivate = !!userData?.isPrivate;
 
         if (!optimisticPrivate) {
@@ -298,7 +304,7 @@ export function useProfileData(
         void (async () => {
           try {
             const [myFollowing, profileFollowers] = await Promise.all([
-              userService.getFollowing(currentUser.userId),
+              userService.getFollowing(activeUser.userId),
               userService.getFollowers(displayUserId),
             ]);
             if (!isLatestRun()) return;
@@ -393,7 +399,7 @@ export function useProfileData(
       PROFILE_LAST_FETCH_BY_CACHE_KEY[cacheKey] = Date.now();
       setLoading(false);
     }
-  }, [currentUser, displayUserId, fadeAnim, isOwnProfile, profileCacheKey, sortPinnedFirst]);
+  }, [displayUserId, fadeAnim, isOwnProfile, profileCacheKey, sortPinnedFirst]);
 
   useEffect(() => {
     loadProfileRef.current = loadProfile;
@@ -401,11 +407,12 @@ export function useProfileData(
 
   useEffect(() => {
     if (!displayUserId) return;
-    if (currentUser?.userId) {
-      void appWarmupService.prefetchProfile(displayUserId, currentUser.userId);
+    const activeUser = currentUserRef.current;
+    if (activeUser?.userId) {
+      void appWarmupService.prefetchProfile(displayUserId, activeUser.userId);
     }
     void loadProfile();
-  }, [currentUser?.userId, displayUserId, loadProfile]);
+  }, [displayUserId, loadProfile]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);

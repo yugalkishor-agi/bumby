@@ -266,7 +266,7 @@ export function StoryProcessingProvider({ children }: { children: ReactNode }) {
       const hasMediaDims = typeof story.mediaWidth === 'number' && typeof story.mediaHeight === 'number' && (story.mediaWidth || 0) > 0 && (story.mediaHeight || 0) > 0;
       // Compute interactive widgets summary from stickers
       const interactiveTypes = new Set(['poll', 'slider', 'question', 'quiz']);
-      const persistableTypes = new Set(['poll', 'slider', 'question', 'quiz', 'mention', 'hashtag', 'time', 'rating', 'music']);
+      const persistableTypes = new Set(['poll', 'slider', 'question', 'quiz', 'mention', 'hashtag', 'time', 'rating']);
       const allStickerTypes = Array.isArray(story.stickers) ? story.stickers.map((s: any) => (s && typeof s.type === 'string') ? s.type : null).filter(Boolean) : [];
       console.log('[StoryProcessing] stickers summary', {
         total: Array.isArray(story.stickers) ? story.stickers.length : 0,

@@ -11,7 +11,7 @@ export default function QRCodeScreen() {
   const handleShare = async () => {
     try {
       await Share.share({
-        message: `Follow me on Iris: @${user?.username}`,
+        message: `Follow me on Bumby: @${user?.username}`,
       });
     } catch (error) {
       console.error(error);

@@ -105,7 +105,6 @@ export const useFeed = (page: number = 1) => {
           authorUsername: glimpse.authorUsername,
           authorAvatarURL: glimpse.authorAvatarURL, // Use correct field
           authorVerified: glimpse.authorVerified,
-          backgroundMusic: glimpse.backgroundMusic, // Pass audio data
           stats: glimpse.stats || {
             likesCount: 0,
             commentsCount: 0,

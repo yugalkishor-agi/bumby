@@ -38,6 +38,7 @@ export const colors = {
     success: '#22c55e',
     error: '#ef4444',
     warning: '#f59e0b',
+    onAccent: '#FFFFFF',   // Foreground/icon colour on top of an accent fill
   },
   
   // Interactive
@@ -73,6 +74,7 @@ export const lightColors = {
     success: '#16a34a',
     error: '#dc2626',
     warning: '#d97706',
+    onAccent: '#FFFFFF',
   },
   interactive: {
     primary: '#FFFFFF',
@@ -141,104 +143,110 @@ export const typography = {
   },
 };
 
-// Common component styles
-export const commonStyles = {
-  // Buttons
-  button: {
-    primary: {
-      backgroundColor: colors.interactive.primary,
-      height: 52,
-      borderRadius: borderRadius.md,
-      paddingHorizontal: spacing.xl,
-      justifyContent: 'center' as any,
-      alignItems: 'center' as any,
+// Common component styles.
+//
+// These are theme-aware: build them with `createCommonStyles(useColors())` so
+// shared components (Button, Input) follow light/dark mode instead of always
+// rendering the frozen dark palette.
+export function createCommonStyles(c: ThemeColors) {
+  return {
+    // Buttons
+    button: {
+      primary: {
+        backgroundColor: c.interactive.primary,
+        height: 52,
+        borderRadius: borderRadius.md,
+        paddingHorizontal: spacing.xl,
+        justifyContent: 'center' as any,
+        alignItems: 'center' as any,
+      },
+      secondary: {
+        backgroundColor: c.interactive.secondary,
+        borderWidth: 1,
+        borderColor: c.border.medium,
+        height: 52,
+        borderRadius: borderRadius.md,
+        paddingHorizontal: spacing.xl,
+        justifyContent: 'center' as any,
+        alignItems: 'center' as any,
+      },
     },
-    secondary: {
-      backgroundColor: colors.interactive.secondary,
-      borderWidth: 1,
-      borderColor: colors.border.medium,
-      height: 52,
-      borderRadius: borderRadius.md,
-      paddingHorizontal: spacing.xl,
-      justifyContent: 'center' as any,
-      alignItems: 'center' as any,
+
+    // Inputs
+    input: {
+      base: {
+        backgroundColor: c.background.tertiary,
+        borderRadius: borderRadius.md,
+        borderWidth: 1,
+        borderColor: c.border.medium,
+        height: 48,
+        paddingHorizontal: spacing.lg,
+        color: c.text.primary,
+        fontSize: typography.fontSize.base,
+      },
+      withIcon: {
+        paddingLeft: spacing.xxxl + spacing.sm,
+      },
     },
-  },
-  
-  // Inputs
-  input: {
-    base: {
-      backgroundColor: colors.background.tertiary,
-      borderRadius: borderRadius.md,
-      borderWidth: 1,
-      borderColor: colors.border.medium,
-      height: 48,
-      paddingHorizontal: spacing.lg,
-      color: colors.text.primary,
-      fontSize: typography.fontSize.base,
-    },
-    withIcon: {
-      paddingLeft: spacing.xxxl + spacing.sm,
-    },
-  },
-  
-  // Cards
-  card: {
-    base: {
-      backgroundColor: colors.background.tertiary,
-      borderRadius: borderRadius.md,
-      padding: spacing.lg,
-      borderWidth: 1,
-      borderColor: colors.border.light,
-    },
-  },
-  
-  // Containers
-  container: {
-    screen: {
-      flex: 1,
-      backgroundColor: colors.background.primary,
-    },
-    content: {
-      paddingHorizontal: spacing.xl,
-    },
-  },
-  
-  // Header
-  header: {
-    base: {
-      flexDirection: 'row' as any,
-      justifyContent: 'space-between' as any,
-      alignItems: 'center' as any,
-      padding: spacing.lg,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.border.light,
-    },
-    title: {
-      fontSize: typography.fontSize.xl,
-      fontWeight: typography.fontWeight.semibold,
-      color: colors.text.primary,
-    },
-  },
-  
-  // Shadows - Subtle for dark mode
-  shadow: {
+
+    // Cards
     card: {
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.3,
-      shadowRadius: 8,
-      elevation: 6,
+      base: {
+        backgroundColor: c.background.tertiary,
+        borderRadius: borderRadius.md,
+        padding: spacing.lg,
+        borderWidth: 1,
+        borderColor: c.border.light,
+      },
     },
-    elevated: {
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.4,
-      shadowRadius: 12,
-      elevation: 10,
+
+    // Containers
+    container: {
+      screen: {
+        flex: 1,
+        backgroundColor: c.background.primary,
+      },
+      content: {
+        paddingHorizontal: spacing.xl,
+      },
     },
-  },
-};
+
+    // Header
+    header: {
+      base: {
+        flexDirection: 'row' as any,
+        justifyContent: 'space-between' as any,
+        alignItems: 'center' as any,
+        padding: spacing.lg,
+        borderBottomWidth: 1,
+        borderBottomColor: c.border.light,
+      },
+      title: {
+        fontSize: typography.fontSize.xl,
+        fontWeight: typography.fontWeight.semibold,
+        color: c.text.primary,
+      },
+    },
+
+    // Shadows - Subtle for dark mode
+    shadow: {
+      card: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 6,
+      },
+      elevated: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.4,
+        shadowRadius: 12,
+        elevation: 10,
+      },
+    },
+  };
+}
 
 // Instagram-style brand colors
 export const brandColors = {

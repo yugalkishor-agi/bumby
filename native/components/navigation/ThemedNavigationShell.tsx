@@ -7,6 +7,7 @@ import {
 } from '@react-navigation/native';
 import { navigationRef } from '../../services/navigation.service';
 import { useTheme as useAppTheme } from '../../contexts/ThemeContext';
+import { ZegoCallInvitationDialog } from '../call/zegoCallComponents';
 
 type ThemedNavigationShellProps = {
   children: React.ReactNode;
@@ -35,6 +36,7 @@ export default function ThemedNavigationShell({ children }: ThemedNavigationShel
 
   return (
     <NavigationContainer ref={navigationRef} theme={navTheme}>
+      <ZegoCallInvitationDialog />
       <StatusBar
         style={isDark ? 'light' : 'dark'}
         backgroundColor={isDark ? '#000000' : '#ffffff'}

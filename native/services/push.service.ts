@@ -1,17 +1,20 @@
 import * as Notifications from 'expo-notifications';
-import Constants from 'expo-constants';
 import * as Device from 'expo-device';
+import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { db, auth } from '../config/firebase';
 import { doc, updateDoc, getDoc, deleteField } from 'firebase/firestore';
 import { NavigationService } from './navigation.service';
 import { toast } from '../contexts/ToastContext';
+import { runtimeConfig } from '../config/runtimeConfig';
 
-const ENABLE_CLIENT_PUSH_SEND = process.env.EXPO_PUBLIC_ENABLE_CLIENT_PUSH_SEND !== 'false';
-const CAN_CLIENT_SEND_PUSH = ENABLE_CLIENT_PUSH_SEND && Platform.OS !== 'web';
+// Client-side push sending is handled by the Supabase Edge Function (FCM V1).
+// The legacy Expo push path was removed with the Expo sender itself.
 const PUSH_TOKEN_CACHE_TTL_MS = 60 * 1000;
-const REMOTE_PUSH_TTL_SECONDS = 30 * 60;
 const pushTokenCache = new Map<string, { tokens: string[]; expiresAt: number }>();
+
+const SUPABASE_URL = runtimeConfig.supabase.url ?? '';
+const SUPABASE_ANON_KEY = runtimeConfig.supabase.anonKey ?? '';
 
 function clearCachedTokens(userId?: string | null) {
   if (!userId) return;
@@ -90,7 +93,11 @@ function resolveProjectId(): string | undefined {
   const easId = (Constants as any)?.easConfig?.projectId;
   // @ts-ignore
   const expoId = (Constants as any)?.expoConfig?.extra?.eas?.projectId;
-  return easId || expoId;
+  // Hardcoded fallback — ensures dev builds (npx expo run:android) also get
+  // a valid project ID. Without this, Constants.easConfig is undefined in
+  // dev mode and getExpoPushTokenAsync registers against the wrong project.
+  const fallbackId = '884a38af-642d-4ee4-bc42-1ce208a78b6a';
+  return easId || expoId || fallbackId;
 }
 
 function trimPushText(value: any, maxLength = 110): string {
@@ -570,71 +577,25 @@ async function handleNotificationResponseAction(response: Notifications.Notifica
   handleNotificationNavigation(data);
 }
 
-async function sendExpoPush(tokens: string[], presentation: PushPresentation, data?: any) {
-  if (!CAN_CLIENT_SEND_PUSH || !tokens.length) {
-    return;
-  }
+// Minimal title/body builder for the Expo push API fallback path.
+function buildExpoNotification(n: any): { title: string; body: string } {
+  const actor = getActorName(n?.actorUsername);
+  const preview = trimPushText(n?.refPreview, 120);
+  const type = String(n?.type ?? '');
 
-  const payloadData = data && typeof data === 'object' ? { ...data, _source: 'iris-push-v2' } : data;
-  const ttlSeconds = REMOTE_PUSH_TTL_SECONDS;
-
-  const messages = tokens.map((to) => {
-    const message: Record<string, any> = {
-      to,
-      sound: 'default',
-      title: presentation.title,
-      body: presentation.body,
-      data: payloadData,
-      priority: presentation.priority === 'high' ? 'high' : 'default',
-      channelId: presentation.channelId,
-      categoryId: presentation.categoryId,
-      ttl: ttlSeconds,
-      expiration: Math.floor(Date.now() / 1000) + ttlSeconds,
-    };
-
-    if (Platform.OS === 'ios' && presentation.subtitle) {
-      message.subtitle = presentation.subtitle;
-    }
-
-    return message;
-  });
-
-  try {
-    console.log(`[Push] Posting ${messages.length} message(s) to Expo push API via ${presentation.channelId} channel`);
-
-    const response = await fetch('https://exp.host/--/api/v2/push/send', {
-      method: 'POST',
-      headers: {
-        Accept: 'application/json',
-        'Accept-encoding': 'gzip, deflate',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(messages),
-    });
-
-    const responseText = await response.text();
-    let parsed: any = null;
-    try {
-      parsed = responseText ? JSON.parse(responseText) : null;
-    } catch {}
-
-    if (!response.ok) {
-      console.error(`[Push] Expo push API failed (status=${response.status})`, parsed || responseText);
-      return;
-    }
-
-    const failedTickets = Array.isArray(parsed?.data)
-      ? parsed.data.filter((item: any) => item?.status && item.status !== 'ok')
-      : [];
-
-    if (failedTickets.length > 0) {
-      console.error('[Push] Expo push API returned ticket errors', failedTickets);
-      return;
-    }
-
-    console.log(`[Push] Expo push API accepted request (status=${response.status})`, parsed || responseText);
-  } catch (e) {
-    console.error('[Push] sendExpoPush failed', e);
+  switch (type) {
+    case 'dm':         return { title: `New message from ${actor}`, body: preview || 'Open chat to see the message.' };
+    case 'like':       return { title: `${actor} liked your post`, body: 'Tap to view.' };
+    case 'comment':    return { title: `${actor} commented on your post`, body: preview || 'Tap to read.' };
+    case 'comment_reply': return { title: `${actor} replied to your comment`, body: preview || 'Tap to read.' };
+    case 'follow':     return { title: `${actor} started following you`, body: 'Tap to view their profile.' };
+    case 'follow_request': return { title: `${actor} requested to follow you`, body: 'Tap to review.' };
+    case 'mention':    return { title: `${actor} mentioned you`, body: preview || 'Tap to see where.' };
+    case 'story_view': return { title: `${actor} viewed your story`, body: 'Tap to see story activity.' };
+    case 'story_reply': return { title: `${actor} replied to your story`, body: preview || 'Tap to read.' };
+    case 'story_like': return { title: `${actor} liked your story`, body: 'Tap to see story activity.' };
+    case 'collaboration_request': return { title: `${actor} sent a collaboration request`, body: preview || 'Tap to review.' };
+    default:           return { title: `New activity from ${actor}`, body: preview || 'Tap to view.' };
   }
 }
 
@@ -687,10 +648,8 @@ export const pushService = {
 
   async registerForPushNotifications(userId: string) {
     try {
-      if (!shouldAttemptNativePushRegistration()) {
-        console.warn(
-          `[Push] Skipping native push token registration on unsupported platform (platform=${Platform.OS}, isDevice=${Device.isDevice})`
-        );
+      if (Platform.OS === 'web') {
+        console.warn('[Push] Skipping push registration on web');
         return undefined;
       }
 
@@ -707,52 +666,79 @@ export const pushService = {
 
       await configureAndroidNotificationChannels();
 
-      const projectId = resolveProjectId();
-      console.log(`[Push] Resolving Expo projectId=${projectId || 'missing'}`);
-      const tokenResp = await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined);
-      const token = tokenResp.data;
-      if (!token) {
-        console.warn('[Push] Expo push token not returned');
+      // --- Try native FCM token first (physical device, some emulators with Play Services) ---
+      let fcmToken: string | null = null;
+      try {
+        const tokenResp = await Notifications.getDevicePushTokenAsync();
+        const raw = tokenResp.data as string;
+        // Reject obviously fake/short tokens from emulators
+        if (raw && raw.length >= 100) {
+          fcmToken = raw;
+          console.log(`[Push] Got FCM device token for ${userId} (len=${raw.length})`);
+        } else {
+          console.warn(`[Push] FCM device token looks invalid (len=${raw?.length ?? 0}) raw="${String(raw).slice(0,30)}", will try Expo token`);
+        }
+      } catch (fcmErr) {
+        console.warn('[Push] getDevicePushTokenAsync failed, will try Expo token:', fcmErr);
+      }
+
+      // --- Fall back to Expo push token (works on emulators, BlueStacks, all devices) ---
+      let expoToken: string | null = null;
+      if (!fcmToken) {
+        try {
+          const projectId = resolveProjectId();
+          console.log(`[Push] Attempting Expo push token with projectId="${projectId}"`);
+          if (!projectId) {
+            console.warn('[Push] No EAS project ID — cannot get Expo push token');
+          } else {
+            const expoResp = await Notifications.getExpoPushTokenAsync({ projectId });
+            expoToken = expoResp.data;
+            console.log(`[Push] Got Expo push token for ${userId}: ${expoToken?.slice(0, 40)}`);
+          }
+        } catch (expoErr: any) {
+          console.warn('[Push] getExpoPushTokenAsync also failed:', expoErr?.message ?? expoErr);
+        }
+      }
+
+      if (!fcmToken && !expoToken) {
+        console.warn('[Push] Could not obtain any push token for', userId);
         return undefined;
       }
 
       const userRef = doc(db, 'users', userId);
       const userSnap = await getDoc(userRef);
-      const previousTokens: string[] = Array.isArray(userSnap.data()?.expoPushTokens)
-        ? userSnap.data()?.expoPushTokens.filter(Boolean)
-        : [];
-      const previousProjectId = typeof userSnap.data()?.expoPushProjectId === 'string'
-        ? userSnap.data()?.expoPushProjectId
-        : null;
-      const nextProjectId = projectId || null;
-      const hasSameToken = previousTokens.length === 1 && previousTokens[0] === token;
-      const hasSameProjectId = previousProjectId === nextProjectId;
+      const existing = userSnap.data() ?? {};
 
-      if (!hasSameToken || !hasSameProjectId) {
-        await updateDoc(userRef, {
-          expoPushToken: token,
-          expoPushTokens: [token],
-          expoPushProjectId: nextProjectId,
-          expoTokenUpdatedAt: new Date(),
-        });
+      const updates: Record<string, any> = {};
+
+      if (fcmToken && existing.fcmToken !== fcmToken) {
+        updates.fcmToken = fcmToken;
+        updates.fcmTokenUpdatedAt = new Date();
+        // Clear Expo token since FCM path is preferred
+        updates.expoPushToken = deleteField();
+        updates.expoPushTokens = deleteField();
       }
 
+      if (!fcmToken && expoToken && existing.expoPushToken !== expoToken) {
+        updates.expoPushToken = expoToken;
+        updates.expoPushTokenUpdatedAt = new Date();
+        // Clear any stale FCM token so sendForNotification doesn't use it
+        updates.fcmToken = deleteField();
+        updates.fcmTokenUpdatedAt = deleteField();
+      }
+
+      if (Object.keys(updates).length > 0) {
+        await updateDoc(userRef, updates);
+        console.log(`[Push] Token updated in Firestore for ${userId} (fcm=${!!fcmToken}, expo=${!!expoToken})`);
+      }
+
+      const activeToken = fcmToken ?? expoToken!;
       pushTokenCache.set(userId, {
-        tokens: [token],
+        tokens: [activeToken],
         expiresAt: Date.now() + PUSH_TOKEN_CACHE_TTL_MS,
       });
 
-      if (previousTokens.length > 1 || (previousTokens.length === 1 && previousTokens[0] !== token)) {
-        console.log(
-          `[Push] Replaced ${previousTokens.length} stored Expo token(s) with the latest active token for ${userId}`
-        );
-      }
-
-      console.log(
-        `[Push] Registered Expo push token for ${userId} (platform=${Platform.OS}, isDevice=${Device.isDevice})`
-      );
-
-      return token;
+      return activeToken;
     } catch (e) {
       console.warn('[Push] register failed (non-fatal)', e);
       return undefined;
@@ -781,6 +767,8 @@ export const pushService = {
       );
 
       await updateDoc(userRef, {
+        fcmToken: deleteField(),
+        fcmTokenUpdatedAt: deleteField(),
         expoPushToken: deleteField(),
         expoPushTokens: deleteField(),
         expoPushProjectId: deleteField(),
@@ -801,63 +789,172 @@ export const pushService = {
   },
   async sendForNotification(notificationData: any) {
     try {
-      if (!CAN_CLIENT_SEND_PUSH) {
-        return;
-      }
-
       const userId = notificationData?.userId;
       if (!userId) {
         console.warn('[Push] sendForNotification called without userId');
         return;
       }
 
-      const cachedTokens = pushTokenCache.get(userId);
-      let tokens = cachedTokens && cachedTokens.expiresAt > Date.now() ? cachedTokens.tokens : null;
+      // ── 1. Resolve token from cache or Firestore ────────────────────────────
+      const cachedEntry = pushTokenCache.get(userId);
+      const cachedToken = cachedEntry && cachedEntry.expiresAt > Date.now() ? (cachedEntry.tokens[0] ?? null) : null;
 
-      if (!tokens) {
-        const userRef = doc(db, 'users', userId);
-        const userSnap = await getDoc(userRef);
-        const data = userSnap.data() || {};
-        tokens = Array.from(
-          new Set(
-            [
-              ...(Array.isArray((data as any).expoPushTokens) ? (data as any).expoPushTokens : []),
-              (data as any).expoPushToken,
-            ].filter(Boolean)
-          )
-        ) as string[];
+      let fcmToken: string | null = null;
+      let expoToken: string | null = null;
 
-        pushTokenCache.set(userId, {
-          tokens,
-          expiresAt: Date.now() + PUSH_TOKEN_CACHE_TTL_MS,
-        });
+      if (cachedToken) {
+        // Determine type from cache
+        if (cachedToken.startsWith('ExponentPushToken') || cachedToken.startsWith('ExpoPushToken')) {
+          expoToken = cachedToken;
+        } else if (cachedToken.length >= 100) {
+          fcmToken = cachedToken;
+        }
       }
 
-      if (!tokens.length) {
-        console.warn(`[Push] No expo push tokens found for ${userId}`);
+      if (!fcmToken && !expoToken) {
+        const userRef = doc(db, 'users', userId);
+        const userSnap = await getDoc(userRef);
+        const data = userSnap.data() as any;
+        const rawFcm: string | null = data?.fcmToken ?? null;
+        const rawExpo: string | null = data?.expoPushToken ?? null;
+
+        console.log(`[Push] Firestore tokens for ${userId}: fcmToken len=${rawFcm?.length ?? 0}, expoPushToken="${rawExpo?.slice(0,40) ?? 'none'}"`);
+
+        // Prefer FCM if it looks valid
+        if (rawFcm && rawFcm.length >= 100 &&
+            !rawFcm.startsWith('ExponentPushToken') && !rawFcm.startsWith('ExpoPushToken')) {
+          fcmToken = rawFcm;
+        } else if (rawExpo && (rawExpo.startsWith('ExponentPushToken') || rawExpo.startsWith('ExpoPushToken'))) {
+          expoToken = rawExpo;
+        } else if (rawFcm) {
+          // FCM token exists but looks stale/invalid — log and skip
+          console.warn(`[Push] Stored FCM token for ${userId} looks invalid (len=${rawFcm.length}), no Expo fallback found`);
+          pushTokenCache.delete(userId);
+          return;
+        }
+
+        const activeToken = fcmToken ?? expoToken;
+        if (activeToken) {
+          pushTokenCache.set(userId, { tokens: [activeToken], expiresAt: Date.now() + PUSH_TOKEN_CACHE_TTL_MS });
+        }
+      }
+
+      // ── 2. FCM path — via Supabase Edge Function ────────────────────────────
+      if (fcmToken) {
+        if (!SUPABASE_URL) {
+          console.warn('[Push] SUPABASE_URL not set, skipping FCM push');
+          return;
+        }
+
+        console.log(`[Push] Sending via FCM edge function for ${userId}`);
+
+        const res = await fetch(`${SUPABASE_URL}/functions/v1/send-push`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            apikey: SUPABASE_ANON_KEY,
+            Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+          },
+          body: JSON.stringify({
+            fcmToken,
+            notification: {
+              type: notificationData.type,
+              actorUsername: notificationData.actorUsername,
+              actorAvatarURL: notificationData.actorAvatarURL,
+              actorId: notificationData.actorId,
+              refPreview: notificationData.refPreview,
+              refMediaURL: notificationData.refMediaURL,
+              refType: notificationData.refType,
+              refId: notificationData.refId,
+              notificationId: notificationData.notificationId,
+            },
+          }),
+        });
+
+        if (!res.ok) {
+          const err = await res.text();
+          console.error(`[Push] Edge Function error (${res.status}):`, err);
+
+          // 410 = stale/invalid FCM token — purge and try Expo fallback if available
+          if (res.status === 410) {
+            try {
+              const userRef = doc(db, 'users', userId);
+              const userSnap = await getDoc(userRef);
+              const fallbackExpo: string | null = (userSnap.data() as any)?.expoPushToken ?? null;
+              await updateDoc(userRef, { fcmToken: deleteField(), fcmTokenUpdatedAt: deleteField() });
+              pushTokenCache.delete(userId);
+              console.warn(`[Push] Purged stale FCM token for ${userId}`);
+
+              if (fallbackExpo && (fallbackExpo.startsWith('ExponentPushToken') || fallbackExpo.startsWith('ExpoPushToken'))) {
+                console.log(`[Push] Retrying with Expo fallback token for ${userId}`);
+                expoToken = fallbackExpo;
+                // fall through to Expo path below
+              } else {
+                return;
+              }
+            } catch (purgeErr) {
+              console.warn('[Push] Failed to purge stale FCM token', purgeErr);
+              return;
+            }
+          } else {
+            return;
+          }
+        } else {
+          const result = await res.json();
+          console.log(`[Push] FCM notification delivered:`, result?.name ?? 'ok');
+          return;
+        }
+      }
+
+      // ── 3. Expo path — direct to Expo push API (emulator / BlueStacks fallback) ──
+      if (expoToken) {
+        const { title, body: bodyText } = buildExpoNotification(notificationData);
+
+        console.log(`[Push] Sending via Expo push API for ${userId}`);
+
+        const res = await fetch('https://exp.host/--/api/v2/push/send', {
+          method: 'POST',
+          headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            to: expoToken,
+            title,
+            body: bodyText,
+            sound: 'default',
+            priority: 'high',
+            channelId: notificationData.type === 'dm' ? 'messages' : 'social',
+            data: {
+              type: notificationData.type ?? '',
+              notificationId: notificationData.notificationId ?? '',
+              refType: notificationData.refType ?? '',
+              refId: notificationData.refId ?? '',
+              actorId: notificationData.actorId ?? '',
+              actorUsername: notificationData.actorUsername ?? '',
+              actorAvatarURL: notificationData.actorAvatarURL ?? '',
+              refPreview: notificationData.refPreview ?? '',
+              refMediaURL: notificationData.refMediaURL ?? '',
+            },
+          }),
+        });
+
+        if (!res.ok) {
+          console.error(`[Push] Expo push API error (${res.status}):`, await res.text());
+          return;
+        }
+
+        const result = await res.json();
+        const ticket = Array.isArray(result?.data) ? result.data[0] : result?.data;
+        if (ticket?.status === 'error') {
+          console.error('[Push] Expo push ticket error:', ticket);
+        } else {
+          console.log(`[Push] Expo notification delivered (id=${ticket?.id ?? 'ok'})`);
+        }
         return;
       }
 
-      console.log(`[Push] Sending notification to ${tokens.length} token(s) for ${userId}`);
-
-      const presentation = buildPushPresentation(notificationData);
-      const nav = buildNavigationPayload(notificationData);
-
-      await sendExpoPush(tokens, presentation, {
-        screen: nav.screen,
-        params: nav.params,
-        notificationId: notificationData?.notificationId,
-        type: notificationData?.type,
-        refType: notificationData?.refType,
-        refId: notificationData?.refId,
-        actorId: notificationData?.actorId,
-        actorUsername: notificationData?.actorUsername,
-        actorAvatarURL: notificationData?.actorAvatarURL,
-        actorVerified: notificationData?.actorVerified,
-        refPreview: notificationData?.refPreview,
-        refMediaURL: notificationData?.refMediaURL,
-        totalLikesCount: notificationData?.totalLikesCount,
-      });
+      console.warn(`[Push] No valid token found for ${userId} — notification not delivered`);
     } catch (e) {
       console.error('[Push] sendForNotification failed', e);
     }

@@ -13,7 +13,7 @@ import { VerifiedBadge } from './VerifiedBadge';
 import { colors, spacing, borderRadius, typography } from '../../styles/theme';
 import { Image } from 'expo-image';
 
-const irisLogo = require('../../../public/Iris-logo.png');
+const irisLogo = require('../../../assets/Images/bumbylogo.png');
 const { width } = Dimensions.get('window');
 
 export interface ToastProps {
@@ -158,7 +158,7 @@ export function Toast({
             <View style={styles.notificationTopRow}>
               <View style={styles.brandChip}>
                 <Image source={resolvedBrandSource} style={styles.brandLogo} contentFit="contain" />
-                <Text style={styles.brandLabel}>Iris</Text>
+                <Text style={styles.brandLabel}>Bumby</Text>
               </View>
               <Text style={styles.notificationTime}>{timestampLabel}</Text>
             </View>

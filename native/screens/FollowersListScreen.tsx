@@ -399,7 +399,7 @@ export default function FollowersListScreen() {
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
-        <ScreenSkeleton variant="list" rows={6} />
+        <ScreenSkeleton variant="people" rows={7} />
       </SafeAreaView>
     );
   }

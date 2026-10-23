@@ -51,7 +51,6 @@ export function transformFeedPost(raw: RawFeedPost): Post {
     createdAt: raw.createdAt,
     location: typeof raw.location === 'string' ? raw.location : raw.location?.name,
     tags: raw.tags || [],
-    backgroundMusic: raw.backgroundMusic || null,
     taggedUsers: Array.isArray(raw.taggedUsers) ? raw.taggedUsers : [],
     collaborators: Array.isArray(raw.collaborators) ? raw.collaborators : [],
   };

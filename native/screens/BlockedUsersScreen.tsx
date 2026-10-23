@@ -114,7 +114,7 @@ export default function BlockedUsersScreen() {
 
       {/* Content */}
       {loading ? (
-        <ScreenSkeleton variant="list" rows={6} />
+        <ScreenSkeleton variant="people" rows={7} showHeader={false} />
       ) : blockedUsers.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Ionicons name="ban-outline" size={64} color={colors.text.secondary} />

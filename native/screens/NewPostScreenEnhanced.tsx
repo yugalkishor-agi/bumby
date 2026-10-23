@@ -23,7 +23,6 @@ import * as FileSystem from 'expo-file-system';
 import { Avatar } from '../components/ui/Avatar';
 import { MentionAutocomplete } from '../components/ui/MentionAutocomplete';
 import { HashtagAutocomplete } from '../components/ui/HashtagAutocomplete';
-import { MusicPicker, type PickedSong } from '../components/story/MusicPicker';
 import { NativePostImageEditor } from '../components/media/NativePostImageEditor';
 import { PostMediaPreviewModal } from '../components/media/PostMediaPreviewModal';
 import { colors, spacing, typography, borderRadius } from '../styles/theme';
@@ -56,8 +55,6 @@ export default function NewPostScreenEnhanced() {
   const [captionSelection, setCaptionSelection] = useState({ start: 0, end: 0 });
   const [activeMentionQuery, setActiveMentionQuery] = useState('');
   const [activeHashtagQuery, setActiveHashtagQuery] = useState('');
-  const [showMusicPicker, setShowMusicPicker] = useState(false);
-  const [selectedSong, setSelectedSong] = useState<PickedSong | null>(null);
   const [allowComments, setAllowComments] = useState(true);
   const [hideLikeCount, setHideLikeCount] = useState(false);
   const [allowSharing, setAllowSharing] = useState(true);
@@ -114,23 +111,6 @@ export default function NewPostScreenEnhanced() {
           height: 1,
         },
       ]);
-    }
-
-    const draftMusic = (draft as any).backgroundMusic;
-    if (draftMusic?.trackId && draftMusic?.trackTitle) {
-      setSelectedSong({
-        id: draftMusic.trackId,
-        title: draftMusic.trackTitle,
-        artist: draftMusic.artistName || 'Unknown Artist',
-        artworkUrl: draftMusic.coverArtURL,
-        streamUrl: draftMusic.streamURL,
-        duration:
-          typeof draftMusic.clipEnd === 'number' && typeof draftMusic.clipStart === 'number'
-            ? Math.max(0, draftMusic.clipEnd - draftMusic.clipStart)
-            : undefined,
-      });
-    } else {
-      setSelectedSong(null);
     }
   }, [route.params, user]);
 
@@ -447,17 +427,6 @@ export default function NewPostScreenEnhanced() {
                 avatarURL: collaborator.avatarURL,
               }))
             : undefined,
-        backgroundMusic: selectedSong
-          ? {
-              trackId: selectedSong.id,
-              trackTitle: selectedSong.title,
-              artistName: selectedSong.artist || 'Unknown Artist',
-              coverArtURL: selectedSong.artworkUrl,
-              streamURL: selectedSong.streamUrl,
-              clipStart: 0,
-              clipEnd: selectedSong.duration || 30,
-            }
-          : undefined,
         commentsEnabled: allowComments,
         hideLikesCount: hideLikeCount,
         allowSharing,
@@ -509,17 +478,6 @@ export default function NewPostScreenEnhanced() {
       hideLikesCount: hideLikeCount,
       allowSharing,
       audience: visibility,
-      backgroundMusic: selectedSong
-        ? {
-            trackId: selectedSong.id,
-            trackTitle: selectedSong.title,
-            artistName: selectedSong.artist || 'Unknown Artist',
-            coverArtURL: selectedSong.artworkUrl,
-            streamURL: selectedSong.streamUrl,
-            clipStart: 0,
-            clipEnd: selectedSong.duration || 30,
-          }
-        : undefined,
     };
 
     if (activeDraftId) {
@@ -771,18 +729,6 @@ export default function NewPostScreenEnhanced() {
             <Ionicons name="chevron-forward" size={20} color={colors.text.secondary} />
           </TouchableOpacity>
 
-          {/* Music */}
-          <TouchableOpacity
-            style={styles.optionItem}
-            onPress={() => setShowMusicPicker(true)}
-          >
-            <Ionicons name="musical-notes-outline" size={24} color={colors.text.secondary} />
-            <Text style={styles.optionText}>
-              {selectedSong ? `${selectedSong.title} • ${selectedSong.artist || 'Unknown Artist'}` : 'Add song from Audius'}
-            </Text>
-            <Ionicons name="chevron-forward" size={20} color={colors.text.secondary} />
-          </TouchableOpacity>
-
           {/* Tagged Users */}
           {taggedUsers.length > 0 && (
             <View style={styles.taggedUsersSection}>
@@ -812,20 +758,6 @@ export default function NewPostScreenEnhanced() {
                   </TouchableOpacity>
                 </View>
               ))}
-            </View>
-          )}
-
-          {selectedSong && (
-            <View style={styles.musicPreviewCard}>
-              <View style={styles.musicPreviewLeft}>
-                <Ionicons name="musical-note" size={18} color={colors.accent.primary} />
-                <Text style={styles.musicPreviewText} numberOfLines={1}>
-                  {selectedSong.title} - {selectedSong.artist || 'Unknown Artist'}
-                </Text>
-              </View>
-              <TouchableOpacity onPress={() => setSelectedSong(null)}>
-                <Ionicons name="close-circle" size={20} color={colors.text.secondary} />
-              </TouchableOpacity>
             </View>
           )}
 
@@ -1069,15 +1001,6 @@ export default function NewPostScreenEnhanced() {
             </View>
           </View>
         )}
-
-        <MusicPicker
-          visible={showMusicPicker}
-          onClose={() => setShowMusicPicker(false)}
-          onSelect={(song) => {
-            setSelectedSong(song);
-            setShowMusicPicker(false);
-          }}
-        />
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -1444,32 +1367,6 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: typography.fontSize.base,
     color: colors.text.primary,
-  },
-  musicPreviewCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginHorizontal: spacing.lg,
-    marginBottom: spacing.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.md,
-    backgroundColor: colors.background.secondary,
-    borderWidth: 1,
-    borderColor: colors.border.subtle,
-  },
-  musicPreviewLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    flex: 1,
-    marginRight: spacing.sm,
-  },
-  musicPreviewText: {
-    flex: 1,
-    color: colors.text.primary,
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.medium as any,
   },
   advancedSection: {
     marginTop: spacing.lg,

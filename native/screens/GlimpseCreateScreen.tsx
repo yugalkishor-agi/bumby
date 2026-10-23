@@ -1,10 +1,11 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,
+  Pressable,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -23,17 +24,13 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Avatar } from '../components/ui/Avatar';
 import { MentionAutocomplete } from '../components/ui/MentionAutocomplete';
 import { HashtagAutocomplete } from '../components/ui/HashtagAutocomplete';
-import { MusicPicker, type PickedSong } from '../components/story/MusicPicker';
-import { NativeGlimpseEditor } from '../components/media/NativeGlimpseEditor';
 import { useAuth } from '../contexts/AuthContext';
 import { useUpload } from '../contexts/UploadContext';
 import { userService } from '../services/user.service';
 import { glimpseService } from '../services/glimpse.service';
 import { mediaService } from '../services/media.service.native';
 import { draftService } from '../services/draft.service';
-import { transcoderService } from '../services/transcoder.service';
-import { borderRadius, spacing, typography } from '../styles/theme';
-import { GlimpseEditorMeta, getGlimpseStylePreset } from '../utils/glimpseEditor';
+import { borderRadius, spacing, typography, useColors } from '../styles/theme';
 import { Image } from 'expo-image';
 
 type SelectedMedia = {
@@ -43,7 +40,6 @@ type SelectedMedia = {
   width?: number;
   height?: number;
   duration?: number | null;
-  editorMeta?: GlimpseEditorMeta;
 };
 
 type SelectedCover = {
@@ -53,11 +49,18 @@ type SelectedCover = {
   source: 'auto' | 'custom';
 };
 
+const VISIBILITY_OPTIONS = [
+  { id: 'public' as const, label: 'Public' },
+  { id: 'followers' as const, label: 'Followers' },
+  { id: 'close_friends' as const, label: 'Close Friends' },
+];
+
 export default function GlimpseCreateScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const { user } = useAuth();
   const { startUpload, updateProgress, completeUpload, cancelUpload } = useUpload();
+  const c = useColors();
   const captionInputRef = useRef<TextInput>(null);
   const isMountedRef = useRef(true);
   const tempMediaUrisRef = useRef<string[]>([]);
@@ -71,12 +74,6 @@ export default function GlimpseCreateScreen() {
   const [allowSharing, setAllowSharing] = useState(true);
   const [hideLikes, setHideLikes] = useState(false);
   const [visibility, setVisibility] = useState<'public' | 'followers' | 'close_friends'>('public');
-  const [musicTitle, setMusicTitle] = useState('');
-  const [musicArtist, setMusicArtist] = useState('');
-  const [selectedSong, setSelectedSong] = useState<PickedSong | null>(null);
-  const [songClipStart, setSongClipStart] = useState(0);
-  const [songClipEnd, setSongClipEnd] = useState(20);
-  const [showMusicPicker, setShowMusicPicker] = useState(false);
   const [taggedUsers, setTaggedUsers] = useState<any[]>([]);
   const [collaborators, setCollaborators] = useState<any[]>([]);
   const [showUserTagging, setShowUserTagging] = useState(false);
@@ -91,10 +88,11 @@ export default function GlimpseCreateScreen() {
   const [activeMentionQuery, setActiveMentionQuery] = useState('');
   const [activeHashtagQuery, setActiveHashtagQuery] = useState('');
   const [previewVisible, setPreviewVisible] = useState(false);
-  const [editorVisible, setEditorVisible] = useState(false);
   const [previewMuted, setPreviewMuted] = useState(true);
   const [coverGenerating, setCoverGenerating] = useState(false);
   const [selectedCover, setSelectedCover] = useState<SelectedCover | null>(null);
+
+  const s = useMemo(() => createStyles(c), [c]);
 
   const normalizeVisibility = (value?: string): 'public' | 'followers' | 'close_friends' => {
     if (value === 'followers' || value === 'close_friends' || value === 'public') return value;
@@ -129,7 +127,6 @@ export default function GlimpseCreateScreen() {
         thumbnail: draft.thumbnailURL || draft.mediaURL,
         width: 1,
         height: 1,
-        editorMeta: (draft as any).editorMeta,
       });
     }
 
@@ -138,8 +135,6 @@ export default function GlimpseCreateScreen() {
     setAllowSharing((draft as any).allowSharing ?? true);
     setHideLikes(draft.settings?.hideLikes ?? false);
     setVisibility(normalizeVisibility((draft as any).audience));
-    setMusicTitle(draft.musicTitle || '');
-    setMusicArtist((draft as any).musicArtist || '');
     setSelectedCover(draft.thumbnailURL ? { uri: draft.thumbnailURL, source: 'auto' } : null);
   }, [route.params, user]);
 
@@ -191,7 +186,6 @@ export default function GlimpseCreateScreen() {
       width: asset.width,
       height: asset.height,
       duration: asset.duration,
-      editorMeta: undefined,
     };
   };
 
@@ -313,12 +307,6 @@ export default function GlimpseCreateScreen() {
     }
   };
 
-  const handleReplaceMedia = async () => {
-    const replacement = await pickMediaAsset(false);
-    if (!replacement) return;
-    applySelectedMedia(replacement);
-  };
-
   const pickCoverImage = async () => {
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -343,49 +331,11 @@ export default function GlimpseCreateScreen() {
     }
   };
 
-  const handleAddClip = async () => {
-    if (!selectedMedia || selectedMedia.type !== 'video') {
-      Alert.alert('Video only', 'Add clip works only when the current glimpse is a video.');
-      return;
-    }
-
-    if (!transcoderService.supportsConcat()) {
-      Alert.alert('Concat unavailable', 'This build is missing native clip merge support. Add the native video concat backend first, otherwise Add clip cannot append videos.');
-      return;
-    }
-
-    const nextClip = await pickMediaAsset(false);
-    if (!nextClip) return;
-    if (nextClip.type !== 'video') {
-      Alert.alert('Pick a video', 'Choose a video clip to extend the current glimpse.');
-      return;
-    }
-
-    try {
-      const mergedUri = await transcoderService.concat([selectedMedia.uri, nextClip.uri]);
-      setSelectedMedia({
-        uri: mergedUri,
-        type: 'video',
-        thumbnail: mergedUri,
-        width: selectedMedia.width,
-        height: selectedMedia.height,
-        duration: normalizeDuration(selectedMedia.duration, 'video') + normalizeDuration(nextClip.duration, 'video'),
-        editorMeta: selectedMedia.editorMeta
-          ? { ...selectedMedia.editorMeta, trimStart: 0, trimEnd: undefined, splitAt: undefined }
-          : undefined,
-      });
-    } catch (error) {
-      console.error('Error extending glimpse clip:', error);
-      Alert.alert('Add clip failed', 'Could not append the selected clip to the current video.');
-    }
-  };
-
   const detectActiveCaptionToken = (text: string, cursor: number) => {
     const safeCursor = Math.max(0, Math.min(cursor, text.length));
     const beforeCursor = text.slice(0, safeCursor);
     const match = beforeCursor.match(/(^|\s)([@#][a-zA-Z0-9_]*)$/);
     if (!match) return null;
-
     const token = match[2] || '';
     return {
       type: token.startsWith('@') ? 'mention' : token.startsWith('#') ? 'hashtag' : null,
@@ -469,12 +419,6 @@ export default function GlimpseCreateScreen() {
     await searchUsersForPicker(query, collaborators.map((item) => item.userId), setSearchingCollaborators, setCollaboratorSearchResults);
   };
 
-  const formatClipRange = (start: number, end: number) => {
-    const safeStart = Math.max(0, Math.floor(start || 0));
-    const safeEnd = Math.max(safeStart, Math.floor(end || safeStart));
-    return `${safeStart}s - ${safeEnd}s`;
-  };
-
   const upsertUniqueUser = (list: any[], userData: any) => {
     const dedup = new Map<string, any>();
     for (const item of [...list, userData]) {
@@ -535,7 +479,7 @@ export default function GlimpseCreateScreen() {
   const handleSaveDraft = () => {
     if (!user) return;
 
-    const hasData = !!selectedMedia || !!selectedCover || !!caption.trim() || !!musicTitle.trim() || !!musicArtist.trim() || !!selectedSong;
+    const hasData = !!selectedMedia || !!selectedCover || !!caption.trim();
     if (!hasData) {
       Alert.alert('Nothing to save', 'Add media or caption before saving this glimpse draft.');
       return;
@@ -546,11 +490,8 @@ export default function GlimpseCreateScreen() {
       mediaURL: selectedMedia?.uri,
       mediaType: selectedMedia?.type,
       thumbnailURL: selectedCover?.uri || selectedMedia?.thumbnail || selectedMedia?.uri,
-      musicTitle: selectedSong?.title || musicTitle.trim() || undefined,
-      musicArtist: selectedSong?.artist || musicArtist.trim() || undefined,
       audience: visibility,
       allowSharing,
-      editorMeta: selectedMedia?.editorMeta,
       settings: {
         allowComments,
         allowDownload: false,
@@ -570,30 +511,6 @@ export default function GlimpseCreateScreen() {
     Alert.alert('Saved', 'Glimpse draft saved successfully.');
   };
 
-  const buildBackgroundMusicPayload = () => {
-    if (selectedSong) {
-      const payload: any = {
-        trackId: selectedSong.id,
-        trackTitle: selectedSong.title,
-        artistName: selectedSong.artist || user?.username || 'Unknown Artist',
-        clipStart: songClipStart,
-        clipEnd: songClipEnd,
-      };
-      if (selectedSong.artworkUrl) payload.coverArtURL = selectedSong.artworkUrl;
-      if (selectedSong.streamUrl) payload.streamURL = selectedSong.streamUrl;
-      return payload;
-    }
-
-    if (musicTitle.trim() || musicArtist.trim()) {
-      return {
-        trackTitle: musicTitle.trim() || 'Original Audio',
-        artistName: musicArtist.trim() || user?.username || 'Unknown Artist',
-      };
-    }
-
-    return undefined;
-  };
-
   const handlePost = async () => {
     if (!selectedMedia || !user || uploading) return;
 
@@ -608,13 +525,11 @@ export default function GlimpseCreateScreen() {
     setCaptionError(false);
     setUploading(true);
     setPreviewVisible(false);
-    setEditorVisible(false);
 
     const currentMedia = selectedMedia;
     const currentCover = selectedCover;
     const currentTaggedUsers = taggedUsers;
     const currentCollaborators = collaborators;
-    const currentMusic = buildBackgroundMusicPayload();
     const currentAllowComments = allowComments;
     const currentAllowSharing = allowSharing;
     const currentHideLikes = hideLikes;
@@ -678,7 +593,6 @@ export default function GlimpseCreateScreen() {
               audience: currentVisibility,
               mentions,
               tags: hashtags,
-              editorMeta: currentMedia.editorMeta,
               taggedUsers: currentTaggedUsers.length > 0
                 ? currentTaggedUsers.map((taggedUser) => ({
                     userId: taggedUser.userId,
@@ -694,7 +608,6 @@ export default function GlimpseCreateScreen() {
                     avatarURL: collaborator.avatarURL,
                   }))
                 : undefined,
-              backgroundMusic: currentMusic,
             },
           );
 
@@ -719,27 +632,17 @@ export default function GlimpseCreateScreen() {
     }, 0);
   };
 
-  const handleEditorSave = (meta: GlimpseEditorMeta) => {
-    setSelectedMedia((prev) => (prev ? { ...prev, editorMeta: meta } : prev));
-    if (selectedCover?.source !== 'custom' && selectedMedia) {
-      setSelectedCover(null);
-      setCoverGenerating(selectedMedia.type === 'video');
-      void generateAutoCover({ ...selectedMedia, editorMeta: meta });
-    }
-    setEditorVisible(false);
-  };
-
   const renderSelectionChips = (items: any[], onRemove: (id: string) => void) => {
     if (!items.length) return null;
 
     return (
-      <View style={styles.selectionWrap}>
+      <View style={s.selectionWrap}>
         {items.map((item) => (
-          <View key={item.userId} style={styles.selectionChip}>
-            <Avatar source={item.avatarURL} size={24} />
-            <Text style={styles.selectionChipText} numberOfLines={1}>@{item.username}</Text>
+          <View key={item.userId} style={s.selectionChip}>
+            <Avatar source={item.avatarURL} size={22} />
+            <Text style={s.selectionChipText} numberOfLines={1}>@{item.username}</Text>
             <TouchableOpacity onPress={() => onRemove(item.userId)} hitSlop={{ top: 8, left: 8, right: 8, bottom: 8 }}>
-              <Ionicons name="close-circle" size={18} color="#93A2BE" />
+              <Ionicons name="close-circle" size={17} color={c.text.muted} />
             </TouchableOpacity>
           </View>
         ))}
@@ -758,21 +661,21 @@ export default function GlimpseCreateScreen() {
     onSelect: (userData: any) => void,
   ) => (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={styles.modalBackdrop}>
-        <View style={styles.modalCard}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>{title}</Text>
-            <TouchableOpacity onPress={onClose} style={styles.modalCloseButton}>
-              <Ionicons name="close" size={20} color="#FFFFFF" />
+      <View style={s.modalBackdrop}>
+        <View style={s.modalCard}>
+          <View style={s.modalHeader}>
+            <Text style={s.modalTitle}>{title}</Text>
+            <TouchableOpacity onPress={onClose} style={s.modalCloseButton}>
+              <Ionicons name="close" size={20} color={c.text.primary} />
             </TouchableOpacity>
           </View>
 
-          <View style={styles.modalSearchShell}>
-            <Ionicons name="search" size={18} color="#7F8DA8" />
+          <View style={s.modalSearchShell}>
+            <Ionicons name="search" size={18} color={c.text.muted} />
             <TextInput
-              style={styles.modalSearchInput}
+              style={s.modalSearchInput}
               placeholder="Search users"
-              placeholderTextColor="#6B7A97"
+              placeholderTextColor={c.text.muted}
               autoFocus
               autoCapitalize="none"
               autoCorrect={false}
@@ -782,24 +685,24 @@ export default function GlimpseCreateScreen() {
           </View>
 
           {loading ? (
-            <View style={styles.modalLoadingState}>
-              <ActivityIndicator size="small" color="#4F7CFF" />
+            <View style={s.modalLoadingState}>
+              <ActivityIndicator size="small" color={c.accent.primary} />
             </View>
           ) : (
-            <ScrollView style={styles.modalList} keyboardShouldPersistTaps="handled">
+            <ScrollView style={s.modalList} keyboardShouldPersistTaps="handled">
               {results.map((candidate) => (
-                <TouchableOpacity key={candidate.userId} style={styles.modalUserRow} onPress={() => onSelect(candidate)}>
+                <TouchableOpacity key={candidate.userId} style={s.modalUserRow} onPress={() => onSelect(candidate)}>
                   <Avatar source={candidate.avatarURL} size={42} />
-                  <View style={styles.modalUserMeta}>
-                    <Text style={styles.modalUserName}>@{candidate.username}</Text>
-                    <Text style={styles.modalUserDisplay} numberOfLines={1}>{candidate.displayName || candidate.username}</Text>
+                  <View style={s.modalUserMeta}>
+                    <Text style={s.modalUserName}>@{candidate.username}</Text>
+                    <Text style={s.modalUserDisplay} numberOfLines={1}>{candidate.displayName || candidate.username}</Text>
                   </View>
-                  <Ionicons name="add-circle" size={22} color="#4F7CFF" />
+                  <Ionicons name="add-circle" size={22} color={c.accent.primary} />
                 </TouchableOpacity>
               ))}
               {!results.length && query.trim().length > 0 ? (
-                <View style={styles.modalEmptyState}>
-                  <Text style={styles.modalEmptyText}>No users found.</Text>
+                <View style={s.modalEmptyState}>
+                  <Text style={s.modalEmptyText}>No users found.</Text>
                 </View>
               ) : null}
             </ScrollView>
@@ -809,203 +712,147 @@ export default function GlimpseCreateScreen() {
     </Modal>
   );
 
-  const renderMediaPreview = (mode: 'stage' | 'fullscreen') => {
+  const renderMedia = (mode: 'stage' | 'fullscreen') => {
     if (!selectedMedia) return null;
-    const selectedStyle = getGlimpseStylePreset(selectedMedia.editorMeta?.styleId);
-    const overlayText = selectedMedia.editorMeta?.overlayText?.trim();
-    const overlayPosition = selectedMedia.editorMeta?.overlayPosition || 'center';
-    const overlayColor = selectedMedia.editorMeta?.overlayColor || selectedStyle.textColor;
-    const overlayAlign = selectedMedia.editorMeta?.overlayAlign || 'center';
-    const overlayBackground = selectedMedia.editorMeta?.overlayBackground || 'none';
-    const overlayEffect = selectedMedia.editorMeta?.overlayEffect || 'clean';
-    const overlayOffsetX = Number((selectedMedia.editorMeta as any)?.overlayOffsetX || 0);
-    const overlayOffsetY = Number((selectedMedia.editorMeta as any)?.overlayOffsetY || 0);
-    const overlayScale = Number((selectedMedia.editorMeta as any)?.overlayScale || 1);
-    const overlayRotation = Number((selectedMedia.editorMeta as any)?.overlayRotation || 0);
-    const videoVolume = Number((selectedMedia.editorMeta as any)?.videoVolume ?? 1);
-    const videoMuted = Boolean((selectedMedia.editorMeta as any)?.videoMuted ?? true);
-    const overlayLayers = (selectedMedia.editorMeta as any)?.overlayLayers || [];
-    const stagePreviewUri = selectedCover?.uri || selectedMedia.thumbnail || selectedMedia.uri;
-    const overlayPositionStyle =
-      overlayPosition === 'top'
-        ? styles.editorOverlayTop
-        : overlayPosition === 'bottom'
-          ? styles.editorOverlayBottom
-          : styles.editorOverlayCenter;
 
-    const textContainerStyle =
-      overlayBackground === 'black'
-        ? { backgroundColor: 'rgba(0,0,0,0.82)', borderColor: 'rgba(255,255,255,0.12)', borderWidth: 1 }
-        : overlayBackground === 'white'
-          ? { backgroundColor: 'rgba(255,255,255,0.95)', borderColor: 'rgba(15,23,42,0.12)', borderWidth: 1 }
-          : overlayBackground === 'glass'
-            ? { backgroundColor: 'rgba(255,255,255,0.18)', borderColor: 'rgba(255,255,255,0.3)', borderWidth: 1 }
-            : { backgroundColor: 'transparent', borderWidth: 0 };
-
-    const safeColor = overlayBackground === 'white' && (overlayColor === '#FFFFFF' || overlayColor === '#F8FAFC')
-      ? '#0F172A'
-      : overlayColor;
-
-    const textShadowStyle =
-      overlayEffect === 'glow'
-        ? { textShadowColor: safeColor, textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 10 }
-        : overlayEffect === 'shadow'
-          ? { textShadowColor: 'rgba(0,0,0,0.45)', textShadowOffset: { width: 0, height: 3 }, textShadowRadius: 12 }
-          : { textShadowColor: 'rgba(0,0,0,0.32)', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 8 };
-
-    return (
-      <View style={mode === 'stage' ? styles.mediaStageCard : styles.previewModalStage}>
-        {selectedMedia.type === 'video' ? (
-          mode === 'fullscreen' ? (
-            <Video
-              source={{ uri: selectedMedia.uri }}
-              style={styles.mediaStageImage}
-              resizeMode={ResizeMode.COVER}
-              shouldPlay
-              isLooping
-              isMuted={previewMuted || videoMuted}
-              volume={(previewMuted || videoMuted) ? 0 : videoVolume}
-              onError={(error) => console.warn('Preview video failed in glimpse create:', error)}
-            />
-          ) : (
-            <Image source={{ uri: stagePreviewUri }} style={styles.mediaStageImage} contentFit="cover" />
-          )
-        ) : (
-          <Image source={{ uri: selectedMedia.uri }} style={styles.mediaStageImage} contentFit="cover" />
-        )}
-        <LinearGradient
-          colors={selectedStyle.gradient}
-          style={[styles.mediaStyleOverlay, { opacity: selectedStyle.overlayOpacity }]}
+    if (selectedMedia.type === 'video' && mode === 'fullscreen') {
+      return (
+        <Video
+          source={{ uri: selectedMedia.uri }}
+          style={s.stageMedia}
+          resizeMode={ResizeMode.COVER}
+          shouldPlay
+          isLooping
+          isMuted={previewMuted}
+          volume={previewMuted ? 0 : 1}
+          onError={(error) => console.warn('Preview video failed in glimpse create:', error)}
         />
-        {overlayLayers.map((layer: any) => (
-          <View key={layer.id} style={[styles.editorOverlayAsset, { left: Number(layer.x || 0), top: Number(layer.y || 0), width: Number(layer.width || 120), height: Number(layer.height || 120), transform: [{ rotate: `${Number(layer.rotation || 0)}deg` }] }]} pointerEvents="none">
-            {layer.assetUri ? (
-              <Image source={{ uri: layer.assetUri }} style={styles.editorOverlayAssetImage} contentFit="cover" />
-            ) : layer.content ? (
-              <View style={styles.editorOverlaySticker}>
-                <Text style={styles.editorOverlayStickerText}>{layer.content}</Text>
-              </View>
-            ) : null}
-          </View>
-        ))}
-        {overlayText ? (
-          <View style={[styles.editorOverlayTextWrap, overlayPositionStyle]} pointerEvents="none">
-            <View style={[styles.editorOverlayShell, textContainerStyle, { transform: [{ translateX: overlayOffsetX }, { translateY: overlayOffsetY }, { scale: overlayScale }, { rotate: `${overlayRotation}deg` }] }]}>
-              <Text style={[styles.editorOverlayText, { color: safeColor, textAlign: overlayAlign as any }, textShadowStyle]} numberOfLines={2}>{overlayText}</Text>
-            </View>
-          </View>
-        ) : null}
-      </View>
-    );
+      );
+    }
+
+    const uri = mode === 'stage'
+      ? (selectedCover?.uri || selectedMedia.thumbnail || selectedMedia.uri)
+      : selectedMedia.uri;
+
+    return <Image source={{ uri }} style={s.stageMedia} contentFit="cover" />;
   };
 
-  const renderEmptyState = () => (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.iconButton} onPress={() => navigation.goBack()}>
-          <Ionicons name="close" size={22} color="#FFFFFF" />
+  const renderHeader = (subtitle?: string) => (
+    <View style={s.header}>
+      <TouchableOpacity style={s.headerIcon} onPress={() => navigation.goBack()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+        <Ionicons name="close" size={22} color={c.text.primary} />
+      </TouchableOpacity>
+
+      <View style={s.headerTitleWrap}>
+        <Text style={s.headerTitle}>New Glimpse</Text>
+        {subtitle ? <Text style={s.headerSubtitle}>{subtitle}</Text> : null}
+      </View>
+
+      <View style={s.headerActions}>
+        <TouchableOpacity onPress={handleSaveDraft} hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}>
+          <Text style={s.headerGhostText}>Draft</Text>
         </TouchableOpacity>
-        <View style={styles.headerTitleWrap}>
-          <Text style={styles.title}>New Glimpse</Text>
-          <Text style={styles.subtitle}>Create and share.</Text>
-        </View>
-        <View style={styles.headerSpacer} />
+        <TouchableOpacity
+          onPress={handlePost}
+          disabled={uploading || !selectedMedia}
+          hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
+        >
+          {uploading ? (
+            <ActivityIndicator size="small" color={c.text.link} />
+          ) : (
+            <Text style={[s.headerShareText, (!selectedMedia || uploading) && s.headerShareTextDisabled]}>Share</Text>
+          )}
+        </TouchableOpacity>
       </View>
-
-      <View style={styles.emptyHero}>
-        <View style={styles.emptyArtwork}>
-          <Ionicons name="flash-outline" size={40} color="#FFFFFF" />
-        </View>
-        <Text style={styles.emptyTitle}>Create glimpse</Text>
-        <Text style={styles.emptyBody}>Pick a photo or video, shape it in the editor, then publish.</Text>
-
-        <View style={styles.emptyActions}>
-          <TouchableOpacity style={styles.primaryButton} onPress={() => pickMedia(false)}>
-            <Ionicons name="images-outline" size={18} color="#FFFFFF" />
-            <Text style={styles.primaryButtonText}>Gallery</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.secondaryButton} onPress={() => pickMedia(true)}>
-            <Ionicons name="camera-outline" size={18} color="#DCE7FF" />
-            <Text style={styles.secondaryButtonText}>Camera</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </SafeAreaView>
+    </View>
   );
 
-  if (!selectedMedia) {
-    return renderEmptyState();
-  }
+  const renderEmptyState = () => (
+    <View style={s.emptyWrap}>
+      <Pressable style={s.emptyTile} onPress={() => pickMedia(false)}>
+        <View style={s.emptyIconWrap}>
+          <Ionicons name="add" size={34} color={c.text.link} />
+        </View>
+        <Text style={s.emptyTitle}>Add a glimpse</Text>
+        <Text style={s.emptyBody}>Choose a photo or video to get started.</Text>
+      </Pressable>
+
+      <TouchableOpacity style={s.emptySecondary} onPress={() => pickMedia(true)}>
+        <Ionicons name="camera-outline" size={18} color={c.text.primary} />
+        <Text style={s.emptySecondaryText}>Use camera</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  const captionOverlayText = caption.trim();
 
   return (
-    <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.iconButton} onPress={() => navigation.goBack()}>
-            <Ionicons name="close" size={22} color="#FFFFFF" />
-          </TouchableOpacity>
-          <View style={styles.headerTitleWrap}>
-            <Text style={styles.title}>New Glimpse</Text>
-            <Text style={styles.subtitle}>Polish, then share.</Text>
-          </View>
-          <View style={styles.headerActions}>
-            <TouchableOpacity style={styles.ghostPill} onPress={handleSaveDraft}>
-              <Text style={styles.ghostPillText}>Draft</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.primaryPill, uploading && styles.primaryPillDisabled]} onPress={handlePost} disabled={uploading}>
-              {uploading ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Text style={styles.primaryPillText}>Share</Text>}
-            </TouchableOpacity>
-          </View>
-        </View>
+    <SafeAreaView style={s.container}>
+      <KeyboardAvoidingView style={s.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        {renderHeader(selectedMedia ? undefined : 'Start with a photo or video')}
 
-        <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent as any} keyboardShouldPersistTaps="handled">
-          <View style={styles.mediaStageSection}>
-            <TouchableOpacity activeOpacity={0.94} onPress={() => setPreviewVisible(true)}>
-              {renderMediaPreview('stage')}
-              <View style={styles.mediaOverlayTop}>
-                <View style={styles.mediaTypeBadge}>
-                  <Text style={styles.mediaTypeText}>Glimpse</Text>
+        {!selectedMedia ? (
+          renderEmptyState()
+        ) : (
+          <ScrollView
+            style={s.scroll}
+            contentContainerStyle={s.scrollContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Hero frame */}
+            <View style={s.stage}>
+              {renderMedia('stage')}
+              <LinearGradient
+                colors={['rgba(0,0,0,0.45)', 'rgba(0,0,0,0)', 'rgba(0,0,0,0.78)']}
+                locations={[0, 0.42, 1]}
+                style={StyleSheet.absoluteFill}
+                pointerEvents="none"
+              />
+
+              <View style={s.stageTopRow} pointerEvents="box-none">
+                <View style={s.stageBadge}>
+                  <Text style={s.stageBadgeText}>GLIMPSE</Text>
                 </View>
-                <View style={styles.mediaTopActions}>
+                <View style={s.stageTopActions}>
                   {selectedMedia.type === 'video' ? (
-                    <TouchableOpacity style={styles.overlayIconButton} onPress={() => setPreviewMuted((prev) => !prev)}>
-                      <Ionicons name={previewMuted ? 'volume-mute-outline' : 'volume-high-outline'} size={18} color="#FFFFFF" />
+                    <TouchableOpacity style={s.stageIconButton} onPress={() => setPreviewMuted((prev) => !prev)}>
+                      <Ionicons name={previewMuted ? 'volume-mute-outline' : 'volume-high-outline'} size={17} color="#FFFFFF" />
                     </TouchableOpacity>
                   ) : null}
-                  <TouchableOpacity style={styles.overlayIconButton} onPress={() => setEditorVisible(true)}>
-                    <Ionicons name="create-outline" size={18} color="#FFFFFF" />
+                  <TouchableOpacity style={s.stageIconButton} onPress={() => setPreviewVisible(true)}>
+                    <Ionicons name="expand-outline" size={17} color="#FFFFFF" />
                   </TouchableOpacity>
                 </View>
               </View>
-              <View style={styles.mediaOverlayBottom}>
-                <Text style={styles.mediaOverlayTitle}>Preview</Text>
-                <Text style={styles.mediaOverlayHint}>Review the frame here, then edit only if you need to trim or style it.</Text>
-              </View>
-            </TouchableOpacity>
 
-            <View style={styles.mediaRail}>
-              <TouchableOpacity style={styles.mediaRailButton} onPress={() => setEditorVisible(true)}>
-                <Ionicons name="sparkles-outline" size={16} color="#8FB3FF" />
-                <Text style={styles.mediaRailButtonText}>Edit</Text>
+              <View style={s.stageBottom} pointerEvents="none">
+                {captionOverlayText ? (
+                  <Text style={s.stageCaption} numberOfLines={4}>{captionOverlayText}</Text>
+                ) : (
+                  <Text style={s.stageCaptionHint}>Your caption shows up on the frame</Text>
+                )}
+              </View>
+            </View>
+
+            {/* Media actions */}
+            <View style={s.mediaActions}>
+              <TouchableOpacity style={s.mediaAction} onPress={() => pickMedia(false)}>
+                <Ionicons name="images-outline" size={17} color={c.text.secondary} />
+                <Text style={s.mediaActionText}>Gallery</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.mediaRailButton} onPress={() => pickMedia(false)}>
-                <Ionicons name="images-outline" size={16} color="#8FB3FF" />
-                <Text style={styles.mediaRailButtonText}>Replace</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.mediaRailButton} onPress={() => pickMedia(true)}>
-                <Ionicons name="camera-outline" size={16} color="#8FB3FF" />
-                <Text style={styles.mediaRailButtonText}>Camera</Text>
+              <TouchableOpacity style={s.mediaAction} onPress={() => pickMedia(true)}>
+                <Ionicons name="camera-outline" size={17} color={c.text.secondary} />
+                <Text style={s.mediaActionText}>Camera</Text>
               </TouchableOpacity>
             </View>
-          </View>
 
-          <View style={styles.panel}>
-            <Text style={styles.sectionTitle}>Caption</Text>
-            <Text style={styles.sectionHint}>Keep it direct. Mentions and hashtags work here.</Text>
-            <View style={[styles.captionShell, captionError && styles.captionShellError]}>
+            {/* Caption */}
+            <View style={s.section}>
+              <Text style={s.sectionLabel}>CAPTION</Text>
               <TextInput
                 ref={captionInputRef}
-                style={styles.captionInput}
+                style={s.captionInput}
                 value={caption}
                 onChangeText={(text) => {
                   setCaption(text);
@@ -1017,876 +864,594 @@ export default function GlimpseCreateScreen() {
                   setCaptionSelection(nextSelection);
                   syncCaptionAutocomplete(caption, nextSelection.start);
                 }}
-                placeholder="Write caption"
-                placeholderTextColor="#6B7A97"
+                placeholder="Say something about this moment"
+                placeholderTextColor={c.text.muted}
                 multiline
                 maxLength={280}
                 textAlignVertical="top"
               />
-              <Text style={[styles.counterText, captionError && styles.counterTextError]}>{caption.length}/280</Text>
-            </View>
-            {captionError ? <Text style={styles.captionErrorText}>Add a caption before sharing this glimpse.</Text> : null}
-            <MentionAutocomplete
-              query={activeMentionQuery}
-              visible={activeMentionQuery.length > 0}
-              onSelect={(mentionedUser) => replaceActiveCaptionToken('@', mentionedUser.username)}
-              maxResults={6}
-            />
-            <HashtagAutocomplete
-              query={activeHashtagQuery}
-              visible={activeHashtagQuery.length > 0}
-              onSelect={(hashtag) => replaceActiveCaptionToken('#', hashtag)}
-              maxResults={6}
-            />
-          </View>
-
-          <View style={styles.panel}>
-            <Text style={styles.sectionTitle}>Enhance</Text>
-            <View style={styles.actionList}>
-              <TouchableOpacity style={styles.actionRow} onPress={() => setShowUserTagging(true)}>
-                <View style={styles.actionIconWrap}>
-                  <Ionicons name="person-add-outline" size={18} color="#8FB3FF" />
-                </View>
-                <View style={styles.actionCopy}>
-                  <Text style={styles.actionTitle}>Tag people</Text>
-                  <Text style={styles.actionSubtitle}>{taggedUsers.length ? `${taggedUsers.length} selected` : 'Attach people to this glimpse.'}</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color="#72839F" />
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.actionRow} onPress={() => setShowCollaboratorTagging(true)}>
-                <View style={styles.actionIconWrap}>
-                  <Ionicons name="people-outline" size={18} color="#8FB3FF" />
-                </View>
-                <View style={styles.actionCopy}>
-                  <Text style={styles.actionTitle}>Collaborators</Text>
-                  <Text style={styles.actionSubtitle}>{collaborators.length ? `${collaborators.length} invited` : 'Send collaboration requests with this glimpse.'}</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color="#72839F" />
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.actionRow} onPress={pickCoverImage}>
-                <View style={styles.actionIconWrap}>
-                  <Ionicons name="image-outline" size={18} color="#8FB3FF" />
-                </View>
-                <View style={styles.actionCopy}>
-                  <Text style={styles.actionTitle}>Cover image</Text>
-                  <Text style={styles.actionSubtitle}>{selectedCover ? (selectedCover.source === 'custom' ? 'Custom cover selected for feed and profile preview.' : 'Auto-generated cover ready for feed and profile preview.') : coverGenerating ? 'Generating a cover in the background.' : 'Choose a cleaner cover for the glimpse tile.'}</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color="#72839F" />
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.actionRow} onPress={() => setShowMusicPicker(true)}>
-                <View style={styles.actionIconWrap}>
-                  <Ionicons name="musical-notes-outline" size={18} color="#8FB3FF" />
-                </View>
-                <View style={styles.actionCopy}>
-                  <Text style={styles.actionTitle}>Music</Text>
-                  <Text style={styles.actionSubtitle}>{selectedSong ? `${selectedSong.title} - ${selectedSong.artist || 'Unknown Artist'} - ${songClipStart}s to ${songClipEnd}s` : 'Attach soundtrack metadata.'}</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color="#72839F" />
-              </TouchableOpacity>
-            </View>
-            {(selectedCover || coverGenerating) ? (
-              <View style={styles.coverCard}>
-                {selectedCover ? (
-                  <Image source={{ uri: selectedCover.uri }} style={styles.coverPreview} contentFit="cover" />
+              <View style={s.captionFooter}>
+                {captionError ? (
+                  <Text style={s.captionErrorText}>A caption is required.</Text>
                 ) : (
-                  <View style={[styles.coverPreview, styles.coverPreviewPlaceholder]}>
-                    <ActivityIndicator size="small" color="#8FB3FF" />
-                  </View>
+                  <Text style={s.captionHint}>Use @ to tag people, # for hashtags.</Text>
                 )}
-                <View style={styles.coverMeta}>
-                  <Text style={styles.coverTitle}>{coverGenerating && !selectedCover ? 'Generating cover' : selectedCover?.source === 'custom' ? 'Custom cover ready' : 'Auto cover ready'}</Text>
-                  <Text style={styles.coverSubtitle}>{coverGenerating && !selectedCover ? 'We are preparing a cleaner frame for feed and profile tiles in the background.' : selectedCover?.source === 'custom' ? 'Compressed before upload for faster share and cleaner tiles.' : 'Generated from your media so the glimpse card already has a clean preview.'}</Text>
-                </View>
-                <TouchableOpacity onPress={restoreAutoCover} hitSlop={{ top: 8, left: 8, right: 8, bottom: 8 }}>
-                  <Ionicons name="refresh-circle" size={22} color="#93A2BE" />
-                </TouchableOpacity>
+                <Text style={[s.counterText, captionError && s.counterTextError]}>{caption.length}/280</Text>
               </View>
-            ) : null}
-            {renderSelectionChips(taggedUsers, removeUserTag)}
-            {renderSelectionChips(collaborators, removeCollaborator)}
-
-            {selectedSong ? (
-              <View style={styles.musicCard}>
-                <View style={styles.musicCardMeta}>
-                  <Ionicons name="musical-note" size={16} color="#8FB3FF" />
-                  <Text style={styles.musicCardTitle} numberOfLines={1}>{selectedSong.title}</Text>
-                  <Text style={styles.musicCardArtist} numberOfLines={1}>{selectedSong.artist || 'Unknown Artist'} - {formatClipRange(songClipStart, songClipEnd)}</Text>
-                </View>
-                <TouchableOpacity onPress={() => { setSelectedSong(null); setSongClipStart(0); setSongClipEnd(20); }}>
-                  <Ionicons name="close-circle" size={20} color="#93A2BE" />
-                </TouchableOpacity>
-              </View>
-            ) : null}
-
-            <View style={styles.manualMusicGrid}>
-              <TextInput
-                style={styles.inlineInput}
-                value={musicTitle}
-                onChangeText={setMusicTitle}
-                placeholder="Track title"
-                placeholderTextColor="#6B7A97"
-                maxLength={60}
+              <MentionAutocomplete
+                query={activeMentionQuery}
+                visible={activeMentionQuery.length > 0}
+                onSelect={(mentionedUser) => replaceActiveCaptionToken('@', mentionedUser.username)}
+                maxResults={6}
               />
-              <TextInput
-                style={styles.inlineInput}
-                value={musicArtist}
-                onChangeText={setMusicArtist}
-                placeholder="Artist"
-                placeholderTextColor="#6B7A97"
-                maxLength={60}
+              <HashtagAutocomplete
+                query={activeHashtagQuery}
+                visible={activeHashtagQuery.length > 0}
+                onSelect={(hashtag) => replaceActiveCaptionToken('#', hashtag)}
+                maxResults={6}
               />
             </View>
-          </View>
 
-          <View style={styles.panel}>
-            <Text style={styles.sectionTitle}>Audience & controls</Text>
-            <View style={styles.visibilityRow}>
-              {(['public', 'followers', 'close_friends'] as const).map((option) => {
-                const label = option === 'close_friends' ? 'Close Friends' : option === 'followers' ? 'Followers' : 'Public';
-                const active = visibility === option;
-                return (
-                  <TouchableOpacity
-                    key={option}
-                    style={[styles.visibilityChip, active && styles.visibilityChipActive]}
-                    onPress={() => setVisibility(option)}
-                  >
-                    <Text style={[styles.visibilityChipText, active && styles.visibilityChipTextActive]}>{label}</Text>
-                  </TouchableOpacity>
-                );
-              })}
+            {/* Add-ons */}
+            <View style={s.section}>
+              <Text style={s.sectionLabel}>ADD TO GLIMPSE</Text>
+
+              <TouchableOpacity style={s.row} onPress={() => setShowUserTagging(true)}>
+                <Ionicons name="person-add-outline" size={19} color={c.text.secondary} />
+                <Text style={s.rowLabel}>Tag people</Text>
+                <Text style={s.rowValue} numberOfLines={1}>
+                  {taggedUsers.length ? `${taggedUsers.length} tagged` : 'Add'}
+                </Text>
+                <Ionicons name="chevron-forward" size={16} color={c.text.muted} />
+              </TouchableOpacity>
+
+              <TouchableOpacity style={s.row} onPress={() => setShowCollaboratorTagging(true)}>
+                <Ionicons name="people-outline" size={19} color={c.text.secondary} />
+                <Text style={s.rowLabel}>Collaborators</Text>
+                <Text style={s.rowValue} numberOfLines={1}>
+                  {collaborators.length ? `${collaborators.length} invited` : 'Invite'}
+                </Text>
+                <Ionicons name="chevron-forward" size={16} color={c.text.muted} />
+              </TouchableOpacity>
+
+              <TouchableOpacity style={s.row} onPress={pickCoverImage}>
+                <Ionicons name="image-outline" size={19} color={c.text.secondary} />
+                <Text style={s.rowLabel}>Cover image</Text>
+                <Text style={s.rowValue} numberOfLines={1}>
+                  {coverGenerating ? 'Generating…' : selectedCover ? 'Custom' : 'Auto'}
+                </Text>
+                <Ionicons name="chevron-forward" size={16} color={c.text.muted} />
+              </TouchableOpacity>
+
+              {selectedCover ? (
+                <View style={s.coverCard}>
+                  <Image source={{ uri: selectedCover.uri }} style={s.coverPreview} contentFit="cover" />
+                  <View style={s.coverMeta}>
+                    <Text style={s.coverTitle}>
+                      {selectedCover.source === 'custom' ? 'Custom cover' : 'Auto cover'}
+                    </Text>
+                    <Text style={s.coverSubtitle} numberOfLines={2}>
+                      {selectedCover.source === 'custom'
+                        ? 'Used for the feed and profile tile.'
+                        : 'Pulled from your media.'}
+                    </Text>
+                  </View>
+                  {selectedCover.source === 'custom' ? (
+                    <TouchableOpacity onPress={restoreAutoCover} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                      <Ionicons name="refresh-circle" size={21} color={c.text.secondary} />
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+              ) : null}
+
+              {renderSelectionChips(taggedUsers, removeUserTag)}
+              {renderSelectionChips(collaborators, removeCollaborator)}
+            </View>
+
+            {/* Audience */}
+            <View style={s.section}>
+              <Text style={s.sectionLabel}>AUDIENCE</Text>
+              <View style={s.segmentTrack}>
+                {VISIBILITY_OPTIONS.map((option, index) => {
+                  const active = visibility === option.id;
+                  return (
+                    <TouchableOpacity
+                      key={option.id}
+                      style={[s.segment, index > 0 && s.segmentDivider, active && s.segmentActive]}
+                      onPress={() => setVisibility(option.id)}
+                    >
+                      <Text style={[s.segmentText, active && s.segmentTextActive]} numberOfLines={1}>
+                        {option.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
               {visibility === 'close_friends' ? (
-                <TouchableOpacity
-                  style={styles.visibilityManageButton}
-                  onPress={openCloseFriendsManager}
-                  activeOpacity={0.82}
-                  accessibilityRole="button"
-                  accessibilityLabel="Manage close friends"
-                >
-                  <Ionicons name="ellipsis-horizontal" size={16} color="#DCE7FF" />
+                <TouchableOpacity style={s.manageRow} onPress={openCloseFriendsManager}>
+                  <Ionicons name="star-outline" size={16} color={c.text.secondary} />
+                  <Text style={s.manageRowText}>Manage close friends</Text>
+                  <Ionicons name="chevron-forward" size={15} color={c.text.muted} />
                 </TouchableOpacity>
               ) : null}
             </View>
 
-            <View style={styles.settingsList}>
-              <View style={styles.settingRow}>
-                <View style={styles.settingCopy}>
-                  <Text style={styles.settingTitle}>Allow comments</Text>
-                  <Text style={styles.settingSubtitle}>People can comment on the glimpse.</Text>
-                </View>
+            {/* Controls */}
+            <View style={s.section}>
+              <Text style={s.sectionLabel}>CONTROLS</Text>
+
+              <View style={s.settingRow}>
+                <Text style={s.settingLabel}>Allow comments</Text>
                 <Switch value={allowComments} onValueChange={setAllowComments} />
               </View>
-              <View style={styles.settingRow}>
-                <View style={styles.settingCopy}>
-                  <Text style={styles.settingTitle}>Allow sharing</Text>
-                  <Text style={styles.settingSubtitle}>Others can reshare the glimpse.</Text>
-                </View>
+              <View style={s.settingRow}>
+                <Text style={s.settingLabel}>Allow resharing</Text>
                 <Switch value={allowSharing} onValueChange={setAllowSharing} />
               </View>
-              <View style={styles.settingRow}>
-                <View style={styles.settingCopy}>
-                  <Text style={styles.settingTitle}>Hide like count</Text>
-                  <Text style={styles.settingSubtitle}>Reactions stay private on the card.</Text>
-                </View>
+              <View style={s.settingRow}>
+                <Text style={s.settingLabel}>Hide like count</Text>
                 <Switch value={hideLikes} onValueChange={setHideLikes} />
               </View>
             </View>
-          </View>
-        </ScrollView>
+          </ScrollView>
+        )}
+
+        {renderUserPickerModal(
+          showUserTagging,
+          'Tag people',
+          userSearchQuery,
+          (text) => {
+            setUserSearchQuery(text);
+            searchUsers(text);
+          },
+          searchingUsers,
+          userSearchResults,
+          () => setShowUserTagging(false),
+          handleUserTag,
+        )}
+
+        {renderUserPickerModal(
+          showCollaboratorTagging,
+          'Add collaborator',
+          collaboratorSearchQuery,
+          (text) => {
+            setCollaboratorSearchQuery(text);
+            searchCollaborators(text);
+          },
+          searchingCollaborators,
+          collaboratorSearchResults,
+          () => setShowCollaboratorTagging(false),
+          handleCollaboratorTag,
+        )}
+
+        {previewVisible && selectedMedia ? (
+          <Modal visible animationType="fade" presentationStyle="fullScreen" onRequestClose={() => setPreviewVisible(false)}>
+            <SafeAreaView style={s.previewContainer}>
+              <View style={s.previewHeader}>
+                <TouchableOpacity style={s.headerIcon} onPress={() => setPreviewVisible(false)}>
+                  <Ionicons name="close" size={22} color="#FFFFFF" />
+                </TouchableOpacity>
+                <Text style={s.previewTitle}>Preview</Text>
+                <View style={s.headerIcon} />
+              </View>
+              <View style={s.previewBody}>
+                <View style={s.previewFrame}>
+                  {renderMedia('fullscreen')}
+                  <LinearGradient
+                    colors={['rgba(0,0,0,0.4)', 'rgba(0,0,0,0)', 'rgba(0,0,0,0.8)']}
+                    locations={[0, 0.4, 1]}
+                    style={StyleSheet.absoluteFill}
+                    pointerEvents="none"
+                  />
+                  {captionOverlayText ? (
+                    <View style={s.previewCaptionWrap} pointerEvents="none">
+                      <Text style={s.stageCaption} numberOfLines={6}>{captionOverlayText}</Text>
+                    </View>
+                  ) : null}
+                </View>
+              </View>
+            </SafeAreaView>
+          </Modal>
+        ) : null}
       </KeyboardAvoidingView>
-
-      {renderUserPickerModal(
-        showUserTagging,
-        'Tag people',
-        userSearchQuery,
-        (text) => {
-          setUserSearchQuery(text);
-          searchUsers(text);
-        },
-        searchingUsers,
-        userSearchResults,
-        () => setShowUserTagging(false),
-        handleUserTag,
-      )}
-
-      {renderUserPickerModal(
-        showCollaboratorTagging,
-        'Add collaborator',
-        collaboratorSearchQuery,
-        (text) => {
-          setCollaboratorSearchQuery(text);
-          searchCollaborators(text);
-        },
-        searchingCollaborators,
-        collaboratorSearchResults,
-        () => setShowCollaboratorTagging(false),
-        handleCollaboratorTag,
-      )}
-
-      <MusicPicker
-        visible={showMusicPicker}
-        onClose={() => setShowMusicPicker(false)}
-        onSelect={(song) => {
-          setSelectedSong(song);
-          setMusicTitle(song.title || '');
-          setMusicArtist(song.artist || '');
-          setSongClipStart(0);
-          setSongClipEnd(Math.max(1, Math.min(song.duration || 20, 20)));
-          setShowMusicPicker(false);
-        }}
-      />
-
-      {previewVisible ? (
-        <Modal visible animationType="fade" presentationStyle="fullScreen" onRequestClose={() => setPreviewVisible(false)}>
-          <SafeAreaView style={styles.previewModalContainer}>
-            <View style={styles.previewModalHeader}>
-              <TouchableOpacity style={styles.iconButton} onPress={() => setPreviewVisible(false)}>
-                <Ionicons name="close" size={22} color="#FFFFFF" />
-              </TouchableOpacity>
-              <Text style={styles.previewModalTitle}>Preview</Text>
-              <TouchableOpacity style={styles.previewEditButton} onPress={() => { setPreviewVisible(false); setEditorVisible(true); }}>
-                <Text style={styles.previewEditButtonText}>Edit</Text>
-              </TouchableOpacity>
-            </View>
-            <View style={styles.previewModalBody}>{renderMediaPreview('fullscreen')}</View>
-          </SafeAreaView>
-        </Modal>
-      ) : null}
-
-      <NativeGlimpseEditor
-        visible={editorVisible}
-        mediaUri={selectedMedia.uri}
-        mediaType={selectedMedia.type}
-        initialMeta={selectedMedia.editorMeta}
-        currentSong={selectedSong ? { title: selectedSong.title, artist: selectedSong.artist, duration: selectedSong.duration, clipStart: songClipStart, clipEnd: songClipEnd, streamUrl: selectedSong.streamUrl } : null}
-        onClose={() => setEditorVisible(false)}
-        onSave={handleEditorSave}
-        onRequestReplace={() => { void handleReplaceMedia(); }}
-        onRequestAddClip={() => { void handleAddClip(); }}
-        onRequestMusic={() => setShowMusicPicker(true)}
-        onMusicRangeChange={({ clipStart, clipEnd }) => {
-          setSongClipStart(clipStart);
-          setSongClipEnd(clipEnd);
-        }}
-      />
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  flex: { flex: 1 },
-  container: { flex: 1, backgroundColor: '#050B16' },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.06)',
-    backgroundColor: '#050B16',
-  },
-  iconButton: {
-    width: 42,
-    height: 42,
-    borderRadius: borderRadius.full,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-  },
-  headerTitleWrap: { flex: 1, marginHorizontal: spacing.md },
-  title: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold as any,
-    color: '#FFFFFF',
-  },
-  subtitle: {
-    marginTop: 2,
-    fontSize: typography.fontSize.xs,
-    color: '#8EA0BE',
-  },
-  headerSpacer: { width: 42 },
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  ghostPill: {
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: borderRadius.full,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-  },
-  ghostPillText: {
-    color: '#DCE7FF',
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold as any,
-  },
-  primaryPill: {
-    minWidth: 84,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: borderRadius.full,
-    backgroundColor: '#2563EB',
-  },
-  primaryPillDisabled: { opacity: 0.7 },
-  primaryPillText: {
-    color: '#FFFFFF',
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.bold as any,
-  },
-  scroll: { flex: 1 },
-  scrollContent: { padding: spacing.lg, paddingBottom: spacing.xxxl, gap: spacing.lg },
-  mediaStageSection: { gap: spacing.md },
-  mediaStageCard: {
-    height: 500,
-    borderRadius: 30,
-    overflow: 'hidden',
-    backgroundColor: '#09111F',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-  },
-  previewModalStage: {
-    width: '100%',
-    height: '82%',
-    borderRadius: 28,
-    overflow: 'hidden',
-    backgroundColor: '#09111F',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-  },
-  mediaStageImage: { width: '100%', height: '100%' },
-  mediaStyleOverlay: { ...StyleSheet.absoluteFillObject },
-  editorOverlayAsset: { position: 'absolute', borderRadius: 16, overflow: 'hidden' },
-  editorOverlayAssetImage: { width: '100%', height: '100%' },
-  editorOverlaySticker: {
-    width: '100%',
-    height: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  editorOverlayStickerText: { fontSize: 64, textAlign: 'center' },
-  editorOverlayTextWrap: { position: 'absolute', left: 22, right: 22 },
-  editorOverlayTop: { top: 74 },
-  editorOverlayCenter: { top: '42%' },
-  editorOverlayBottom: { bottom: 82 },
-  editorOverlayText: {
-    fontSize: 30,
-    fontWeight: '800',
-    lineHeight: 36,
-    textAlign: 'center',
-    textShadowColor: 'rgba(0,0,0,0.36)',
-    textShadowOffset: { width: 0, height: 4 },
-    textShadowRadius: 18,
-  },
-  editorOverlayShell: {
-    alignSelf: 'center',
-    borderRadius: 18,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    maxWidth: '92%',
-  },
-  videoFallbackPreview: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#111B32',
-    gap: 6,
-  },
-  videoFallbackText: {
-    color: '#CBD5E1',
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.medium as any,
-  },
-  mediaOverlayTop: {
-    position: 'absolute',
-    top: 16,
-    left: 16,
-    right: 16,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  mediaTypeBadge: {
-    borderRadius: borderRadius.full,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: 'rgba(8,15,28,0.62)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
-  },
-  mediaTypeText: {
-    color: '#FFFFFF',
-    fontSize: typography.fontSize.xs,
-    fontWeight: typography.fontWeight.semibold as any,
-  },
-  mediaTopActions: { flexDirection: 'row', gap: 10 },
-  overlayIconButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(8,15,28,0.62)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
-  },
-  mediaOverlayBottom: {
-    position: 'absolute',
-    left: 18,
-    right: 18,
-    bottom: 18,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    borderRadius: 20,
-    backgroundColor: 'rgba(8,15,28,0.62)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
-  },
-  mediaOverlayTitle: {
-    color: '#FFFFFF',
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.bold as any,
-  },
-  mediaOverlayHint: {
-    marginTop: 4,
-    color: 'rgba(255,255,255,0.74)',
-    fontSize: typography.fontSize.sm,
-  },
-  mediaRail: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  mediaRailButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 18,
-    backgroundColor: '#09111F',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-  },
-  mediaRailButtonText: {
-    color: '#DCE7FF',
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold as any,
-  },
-  panel: {
-    padding: spacing.lg,
-    borderRadius: 24,
-    backgroundColor: '#09111F',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    gap: 12,
-  },
-  sectionTitle: {
-    color: '#FFFFFF',
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.bold as any,
-  },
-  sectionHint: {
-    color: '#7F8DA8',
-    fontSize: typography.fontSize.sm,
-    lineHeight: 19,
-  },
-  captionShell: {
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingTop: 12,
-    paddingBottom: 10,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-  },
-  captionShellError: {
-    borderColor: '#EF4444',
-    backgroundColor: 'rgba(239,68,68,0.08)',
-  },
-  captionInput: {
-    minHeight: 116,
-    maxHeight: 220,
-    color: '#FFFFFF',
-    fontSize: typography.fontSize.base,
-    lineHeight: 22,
-  },
-  counterText: {
-    marginTop: 8,
-    textAlign: 'right',
-    color: '#7F8DA8',
-    fontSize: typography.fontSize.xs,
-    fontWeight: typography.fontWeight.medium as any,
-  },
-  counterTextError: { color: '#FCA5A5' },
-  captionErrorText: {
-    color: '#FCA5A5',
-    fontSize: typography.fontSize.xs,
-    fontWeight: typography.fontWeight.medium as any,
-  },
-  actionList: { gap: 10 },
-  actionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-  },
-  actionIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(79,124,255,0.12)',
-    marginRight: 12,
-  },
-  actionCopy: { flex: 1, marginRight: 10 },
-  actionTitle: {
-    color: '#FFFFFF',
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.bold as any,
-  },
-  actionSubtitle: {
-    marginTop: 2,
-    color: '#7F8DA8',
-    fontSize: typography.fontSize.xs,
-    lineHeight: 17,
-  },
-  selectionWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 2 },
-  selectionChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    maxWidth: '100%',
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: 'rgba(79,124,255,0.12)',
-    borderWidth: 1,
-    borderColor: 'rgba(79,124,255,0.2)',
-  },
-  selectionChipText: {
-    maxWidth: 150,
-    color: '#DCE7FF',
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold as any,
-  },
-  coverCard: {
-    marginTop: 4,
-    padding: 12,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  coverPreview: {
-    width: 64,
-    height: 90,
-    borderRadius: 14,
-    backgroundColor: '#111B32',
-  },
-  coverPreviewPlaceholder: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  coverMeta: { flex: 1 },
-  coverTitle: {
-    color: '#FFFFFF',
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.bold as any,
-  },
-  coverSubtitle: {
-    marginTop: 4,
-    color: '#7F8DA8',
-    fontSize: typography.fontSize.xs,
-    lineHeight: 17,
-  },
-  musicCard: {
-    marginTop: 4,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  musicCardMeta: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  musicCardTitle: {
-    flexShrink: 1,
-    color: '#FFFFFF',
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.bold as any,
-  },
-  musicCardArtist: { flexShrink: 1, color: '#7F8DA8', fontSize: typography.fontSize.xs },
-  manualMusicGrid: { gap: 10 },
-  inlineInput: {
-    height: 48,
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    color: '#FFFFFF',
-    fontSize: typography.fontSize.sm,
-  },
-  visibilityRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  visibilityChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: borderRadius.full,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-  },
-  visibilityChipActive: {
-    backgroundColor: '#2563EB',
-    borderColor: '#2563EB',
-  },
-  visibilityChipText: {
-    color: '#DCE7FF',
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold as any,
-  },
-  visibilityChipTextActive: { color: '#FFFFFF' },
-  visibilityManageButton: {
-    width: 38,
-    height: 38,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: borderRadius.full,
-    backgroundColor: 'rgba(59,130,246,0.18)',
-    borderWidth: 1,
-    borderColor: 'rgba(96,165,250,0.42)',
-  },
-  settingsList: { gap: 2 },
-  settingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 10,
-    gap: 16,
-  },
-  settingCopy: { flex: 1 },
-  settingTitle: {
-    color: '#FFFFFF',
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.bold as any,
-  },
-  settingSubtitle: {
-    marginTop: 2,
-    color: '#7F8DA8',
-    fontSize: typography.fontSize.xs,
-    lineHeight: 17,
-  },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(3,8,18,0.72)',
-    justifyContent: 'flex-end',
-  },
-  modalCard: {
-    maxHeight: '78%',
-    backgroundColor: '#09111F',
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.xl,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: spacing.md,
-  },
-  modalTitle: {
-    color: '#FFFFFF',
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold as any,
-  },
-  modalCloseButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.06)',
-  },
-  modalSearchShell: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 14,
-    height: 48,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-  },
-  modalSearchInput: { flex: 1, color: '#FFFFFF', fontSize: typography.fontSize.sm },
-  modalLoadingState: { paddingVertical: spacing.xl, alignItems: 'center' },
-  modalList: { marginTop: spacing.md },
-  modalUserRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.06)',
-  },
-  modalUserMeta: { flex: 1, marginLeft: 12, marginRight: 12 },
-  modalUserName: {
-    color: '#FFFFFF',
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.bold as any,
-  },
-  modalUserDisplay: { marginTop: 2, color: '#7F8DA8', fontSize: typography.fontSize.xs },
-  modalEmptyState: { paddingVertical: spacing.xl, alignItems: 'center' },
-  modalEmptyText: { color: '#7F8DA8', fontSize: typography.fontSize.sm },
-  emptyHero: {
-    flex: 1,
-    paddingHorizontal: spacing.xl,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emptyArtwork: {
-    width: 92,
-    height: 92,
-    borderRadius: 46,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(79,124,255,0.2)',
-    marginBottom: spacing.lg,
-  },
-  emptyTitle: {
-    color: '#FFFFFF',
-    fontSize: 24,
-    fontWeight: typography.fontWeight.bold as any,
-    textAlign: 'center',
-  },
-  emptyBody: {
-    marginTop: spacing.sm,
-    color: '#8EA0BE',
-    fontSize: typography.fontSize.base,
-    textAlign: 'center',
-    lineHeight: 22,
-    maxWidth: 320,
-  },
-  emptyActions: { width: '100%', gap: 12, marginTop: spacing.xl },
-  primaryButton: {
-    height: 54,
-    borderRadius: 18,
-    backgroundColor: '#2563EB',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 8,
-  },
-  primaryButtonText: {
-    color: '#FFFFFF',
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.bold as any,
-  },
-  secondaryButton: {
-    height: 54,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 8,
-  },
-  secondaryButtonText: {
-    color: '#DCE7FF',
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.semibold as any,
-  },
-  previewModalContainer: { flex: 1, backgroundColor: '#040A16' },
-  previewModalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-  },
-  previewModalTitle: {
-    color: '#FFFFFF',
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.bold as any,
-  },
-  previewEditButton: {
-    minWidth: 76,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#2563EB',
-  },
-  previewEditButtonText: {
-    color: '#FFFFFF',
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.bold as any,
-  },
-  previewModalBody: {
-    flex: 1,
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.xl,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
+const createStyles = (c: ReturnType<typeof useColors>) =>
+  StyleSheet.create({
+    flex: { flex: 1 },
+    container: { flex: 1, backgroundColor: c.background.primary },
 
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.md,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: c.border.light,
+    },
+    headerIcon: {
+      width: 40,
+      height: 40,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    headerTitleWrap: { flex: 1, marginHorizontal: spacing.sm },
+    headerTitle: {
+      color: c.text.primary,
+      fontSize: typography.fontSize.lg,
+      fontWeight: typography.fontWeight.bold as any,
+      letterSpacing: -0.3,
+    },
+    headerSubtitle: {
+      marginTop: 1,
+      color: c.text.muted,
+      fontSize: typography.fontSize.xs,
+    },
+    headerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.lg },
+    headerGhostText: {
+      color: c.text.secondary,
+      fontSize: typography.fontSize.sm,
+      fontWeight: typography.fontWeight.semibold as any,
+    },
+    headerShareText: {
+      color: c.text.link,
+      fontSize: typography.fontSize.sm,
+      fontWeight: typography.fontWeight.bold as any,
+    },
+    headerShareTextDisabled: { color: c.text.muted },
 
+    scroll: { flex: 1 },
+    scrollContent: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.xxxl },
 
+    stage: {
+      width: '100%',
+      aspectRatio: 9 / 16,
+      maxHeight: 520,
+      borderRadius: borderRadius.xl,
+      overflow: 'hidden',
+      backgroundColor: c.background.secondary,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.border.medium,
+    },
+    stageMedia: { width: '100%', height: '100%' },
+    stageTopRow: {
+      position: 'absolute',
+      top: spacing.md,
+      left: spacing.md,
+      right: spacing.md,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    stageBadge: {
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      borderRadius: borderRadius.full,
+      backgroundColor: 'rgba(0,0,0,0.5)',
+    },
+    stageBadgeText: {
+      color: '#FFFFFF',
+      fontSize: 10,
+      fontWeight: typography.fontWeight.bold as any,
+      letterSpacing: 1.4,
+    },
+    stageTopActions: { flexDirection: 'row', gap: spacing.sm },
+    stageIconButton: {
+      width: 34,
+      height: 34,
+      borderRadius: 17,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'rgba(0,0,0,0.5)',
+    },
+    stageBottom: {
+      position: 'absolute',
+      left: spacing.lg,
+      right: spacing.lg,
+      bottom: spacing.lg,
+    },
+    stageCaption: {
+      color: '#FFFFFF',
+      fontSize: typography.fontSize.base,
+      lineHeight: 22,
+      fontWeight: typography.fontWeight.medium as any,
+      textShadowColor: 'rgba(0,0,0,0.5)',
+      textShadowOffset: { width: 0, height: 1 },
+      textShadowRadius: 6,
+    },
+    stageCaptionHint: {
+      color: 'rgba(255,255,255,0.55)',
+      fontSize: typography.fontSize.sm,
+      fontStyle: 'italic',
+    },
 
+    mediaActions: {
+      flexDirection: 'row',
+      gap: spacing.sm,
+      marginTop: spacing.md,
+    },
+    mediaAction: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      paddingHorizontal: spacing.md,
+      paddingVertical: 9,
+      borderRadius: borderRadius.full,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.border.light,
+    },
+    mediaActionText: {
+      color: c.text.secondary,
+      fontSize: typography.fontSize.sm,
+      fontWeight: typography.fontWeight.medium as any,
+    },
 
+    section: { marginTop: spacing.xl },
+    sectionLabel: {
+      color: c.text.muted,
+      fontSize: 11,
+      fontWeight: typography.fontWeight.bold as any,
+      letterSpacing: 1.3,
+      marginBottom: spacing.sm,
+    },
 
+    captionInput: {
+      minHeight: 104,
+      maxHeight: 200,
+      color: c.text.primary,
+      fontSize: typography.fontSize.base,
+      lineHeight: 23,
+      backgroundColor: c.background.secondary,
+      borderRadius: borderRadius.lg,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.border.light,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.md,
+    },
+    captionFooter: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginTop: spacing.sm,
+      gap: spacing.md,
+    },
+    captionHint: { flex: 1, color: c.text.muted, fontSize: typography.fontSize.xs },
+    captionErrorText: { flex: 1, color: c.accent.error, fontSize: typography.fontSize.xs },
+    counterText: { color: c.text.muted, fontSize: typography.fontSize.xs },
+    counterTextError: { color: c.accent.error },
 
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      paddingVertical: 14,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: c.border.subtle,
+    },
+    rowLabel: { flex: 1, color: c.text.primary, fontSize: typography.fontSize.base },
+    rowValue: { color: c.text.muted, fontSize: typography.fontSize.sm, maxWidth: 140 },
 
+    coverCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      marginTop: spacing.md,
+      padding: spacing.md,
+      borderRadius: borderRadius.lg,
+      backgroundColor: c.background.secondary,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.border.light,
+    },
+    coverPreview: { width: 48, height: 68, borderRadius: borderRadius.md, backgroundColor: c.background.tertiary },
+    coverMeta: { flex: 1 },
+    coverTitle: {
+      color: c.text.primary,
+      fontSize: typography.fontSize.sm,
+      fontWeight: typography.fontWeight.semibold as any,
+    },
+    coverSubtitle: { marginTop: 2, color: c.text.muted, fontSize: typography.fontSize.xs, lineHeight: 16 },
 
+    selectionWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.md },
+    selectionChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      paddingLeft: 4,
+      paddingRight: 8,
+      paddingVertical: 4,
+      borderRadius: borderRadius.full,
+      backgroundColor: c.background.secondary,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.border.light,
+    },
+    selectionChipText: {
+      maxWidth: 130,
+      color: c.text.primary,
+      fontSize: typography.fontSize.sm,
+      fontWeight: typography.fontWeight.medium as any,
+    },
 
+    segmentTrack: {
+      flexDirection: 'row',
+      borderRadius: borderRadius.md,
+      backgroundColor: c.background.secondary,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.border.light,
+      overflow: 'hidden',
+    },
+    segment: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 11,
+    },
+    segmentDivider: { borderLeftWidth: StyleSheet.hairlineWidth, borderLeftColor: c.border.light },
+    segmentActive: { backgroundColor: c.accent.primary },
+    segmentText: {
+      color: c.text.secondary,
+      fontSize: typography.fontSize.sm,
+      fontWeight: typography.fontWeight.medium as any,
+    },
+    segmentTextActive: { color: c.accent.onAccent, fontWeight: typography.fontWeight.bold as any },
 
+    manageRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      marginTop: spacing.md,
+    },
+    manageRowText: { flex: 1, color: c.text.secondary, fontSize: typography.fontSize.sm },
 
+    settingRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingVertical: 12,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: c.border.subtle,
+      gap: spacing.md,
+    },
+    settingLabel: { flex: 1, color: c.text.primary, fontSize: typography.fontSize.base },
 
+    emptyWrap: { flex: 1, justifyContent: 'center', paddingHorizontal: spacing.xl },
+    emptyTile: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: spacing.xxxl,
+      borderRadius: borderRadius.xl,
+      borderWidth: 1,
+      borderStyle: 'dashed',
+      borderColor: c.border.medium,
+      backgroundColor: c.background.secondary,
+    },
+    emptyIconWrap: {
+      width: 72,
+      height: 72,
+      borderRadius: 36,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: c.background.tertiary,
+      marginBottom: spacing.lg,
+    },
+    emptyTitle: {
+      color: c.text.primary,
+      fontSize: typography.fontSize.xl,
+      fontWeight: typography.fontWeight.bold as any,
+    },
+    emptyBody: {
+      marginTop: spacing.xs,
+      color: c.text.muted,
+      fontSize: typography.fontSize.sm,
+      textAlign: 'center',
+    },
+    emptySecondary: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.sm,
+      marginTop: spacing.lg,
+      paddingVertical: spacing.md,
+    },
+    emptySecondaryText: {
+      color: c.text.primary,
+      fontSize: typography.fontSize.base,
+      fontWeight: typography.fontWeight.medium as any,
+    },
 
+    modalBackdrop: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.6)',
+      justifyContent: 'flex-end',
+    },
+    modalCard: {
+      maxHeight: '78%',
+      backgroundColor: c.background.secondary,
+      borderTopLeftRadius: borderRadius.xl,
+      borderTopRightRadius: borderRadius.xl,
+      paddingHorizontal: spacing.lg,
+      paddingTop: spacing.lg,
+      paddingBottom: spacing.xl,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderColor: c.border.light,
+    },
+    modalHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: spacing.md,
+    },
+    modalTitle: {
+      color: c.text.primary,
+      fontSize: typography.fontSize.lg,
+      fontWeight: typography.fontWeight.bold as any,
+    },
+    modalCloseButton: {
+      width: 34,
+      height: 34,
+      borderRadius: 17,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: c.background.tertiary,
+    },
+    modalSearchShell: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      paddingHorizontal: spacing.md,
+      height: 46,
+      borderRadius: borderRadius.md,
+      backgroundColor: c.background.tertiary,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.border.light,
+    },
+    modalSearchInput: { flex: 1, color: c.text.primary, fontSize: typography.fontSize.sm },
+    modalLoadingState: { paddingVertical: spacing.xl, alignItems: 'center' },
+    modalList: { marginTop: spacing.md },
+    modalUserRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 12,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: c.border.subtle,
+    },
+    modalUserMeta: { flex: 1, marginLeft: spacing.md, marginRight: spacing.md },
+    modalUserName: {
+      color: c.text.primary,
+      fontSize: typography.fontSize.sm,
+      fontWeight: typography.fontWeight.semibold as any,
+    },
+    modalUserDisplay: { marginTop: 2, color: c.text.muted, fontSize: typography.fontSize.xs },
+    modalEmptyState: { paddingVertical: spacing.xl, alignItems: 'center' },
+    modalEmptyText: { color: c.text.muted, fontSize: typography.fontSize.sm },
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    previewContainer: { flex: 1, backgroundColor: '#000000' },
+    previewHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.md,
+    },
+    previewTitle: {
+      color: '#FFFFFF',
+      fontSize: typography.fontSize.base,
+      fontWeight: typography.fontWeight.semibold as any,
+    },
+    previewBody: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+    previewFrame: {
+      width: '100%',
+      aspectRatio: 9 / 16,
+      maxHeight: '100%',
+      borderRadius: borderRadius.lg,
+      overflow: 'hidden',
+      backgroundColor: '#111111',
+    },
+    previewCaptionWrap: {
+      position: 'absolute',
+      left: spacing.lg,
+      right: spacing.lg,
+      bottom: spacing.lg,
+    },
+  });

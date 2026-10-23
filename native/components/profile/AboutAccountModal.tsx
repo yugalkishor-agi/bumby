@@ -1,10 +1,10 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Modal } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { Avatar } from '../ui/Avatar';
 import { VerifiedBadge } from '../ui/VerifiedBadge';
-import { colors, spacing, typography, borderRadius } from '../../styles/theme';
+import { useTheme } from '../../contexts/ThemeContext';
+import { spacing, typography, borderRadius, useColors } from '../../styles/theme';
 
 interface AboutAccountModalProps {
   visible: boolean;
@@ -13,35 +13,41 @@ interface AboutAccountModalProps {
   isProfileVerified: boolean;
 }
 
+const formatJoinedDate = (value: any) => {
+  if (!value) return 'Unknown';
+  const date = value?.toDate ? value.toDate() : value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date?.getTime?.())) return 'Unknown';
+  return date.toLocaleDateString('en-US', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
+};
+
+// `User` has no `country` field - location lives on the profile or the
+// business record.
+const getLocationLabel = (user: any) => {
+  const candidates = [user?.location, user?.businessInfo?.address];
+
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string') continue;
+    const trimmed = candidate.trim();
+    if (!trimmed) continue;
+    const parts = trimmed.split(',').map((part: string) => part.trim()).filter(Boolean);
+    return parts[parts.length - 1] || trimmed;
+  }
+
+  return 'Not available';
+};
+
 export function AboutAccountModal({ visible, onClose, profileUser, isProfileVerified }: AboutAccountModalProps) {
-  const formatAboutAccountDate = (value: any) => {
-    if (!value) return 'Date not available';
-    const date = value?.toDate ? value.toDate() : value instanceof Date ? value : new Date(value);
-    if (Number.isNaN(date?.getTime?.())) return 'Date not available';
-    return date.toLocaleDateString('en-US', {
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric',
-    });
-  };
+  const c = useColors();
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
 
-  const getAccountCountryLabel = (user: any) => {
-    const candidates = [
-      user?.country,
-      user?.location,
-      user?.businessInfo?.address,
-    ];
-
-    for (const candidate of candidates) {
-      if (typeof candidate !== 'string') continue;
-      const trimmed = candidate.trim();
-      if (!trimmed) continue;
-      const parts = trimmed.split(',').map((part: string) => part.trim()).filter(Boolean);
-      return parts[parts.length - 1] || trimmed;
-    }
-
-    return 'Location not available';
-  };
+  const cardStyle = isDark
+    ? { backgroundColor: '#0B1220', borderColor: 'rgba(255,255,255,0.1)' }
+    : { backgroundColor: c.background.tertiary, borderColor: c.border.medium };
 
   return (
     <Modal
@@ -50,228 +56,210 @@ export function AboutAccountModal({ visible, onClose, profileUser, isProfileVeri
       animationType="fade"
       onRequestClose={onClose}
     >
-      <View style={styles.aboutAccountOverlay}>
-        <TouchableOpacity style={styles.aboutAccountBackdrop} activeOpacity={1} onPress={onClose} />
-        <View style={styles.aboutAccountCard}>
-          <LinearGradient
-            colors={['#111827', '#0F172A', '#020617']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.aboutAccountCardGradient}
-          >
-            <View style={styles.aboutAccountHeader}>
-              <Text style={styles.aboutAccountTitle}>About this account</Text>
-              <TouchableOpacity style={styles.aboutAccountCloseButton} onPress={onClose} activeOpacity={0.8}>
-                <Ionicons name="close" size={20} color={colors.text.primary} />
-              </TouchableOpacity>
-            </View>
+      <View style={styles.overlay}>
+        <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose} />
+        <View style={[styles.card, cardStyle]}>
+          <View style={styles.header}>
+            <Text style={[styles.title, { color: c.text.primary }]}>About this account</Text>
+            <TouchableOpacity
+              style={[styles.closeButton, { backgroundColor: c.background.elevated }]}
+              onPress={onClose}
+              activeOpacity={0.8}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel="Close"
+            >
+              <Ionicons name="close" size={18} color={c.text.primary} />
+            </TouchableOpacity>
+          </View>
 
-            <View style={styles.aboutAccountIdentity}>
-              <Avatar source={profileUser?.avatarURL} size={68} style={styles.aboutAccountAvatar} />
-              <View style={styles.aboutAccountIdentityText}>
-                <View style={styles.aboutAccountNameRow}>
-                  <Text style={styles.aboutAccountDisplayName} numberOfLines={1}>
-                    {profileUser?.displayName || profileUser?.username}
-                  </Text>
-                </View>
-                <View style={styles.aboutAccountUsernameRow}>
-                  <Text style={styles.aboutAccountUsername}>@{profileUser?.username}</Text>
-                  {isProfileVerified ? (
-                    <VerifiedBadge size={18} style={styles.aboutAccountInlineBadge} />
-                  ) : null}
-                </View>
-              </View>
-            </View>
-
-            <View style={styles.aboutAccountFacts}>
-              <View style={styles.aboutAccountFactRow}>
-                <View style={styles.aboutAccountFactIconWrap}>
-                  <Ionicons name="calendar-outline" size={18} color="#7DD3FC" />
-                </View>
-                <View style={styles.aboutAccountFactText}>
-                  <Text style={styles.aboutAccountFactLabel}>Account created</Text>
-                  <Text style={styles.aboutAccountFactValue}>{formatAboutAccountDate(profileUser?.createdAt)}</Text>
-                </View>
-              </View>
-
-              <View style={styles.aboutAccountFactRow}>
-                <View style={styles.aboutAccountFactIconWrap}>
-                  <Ionicons name="earth-outline" size={18} color="#7DD3FC" />
-                </View>
-                <View style={styles.aboutAccountFactText}>
-                  <Text style={styles.aboutAccountFactLabel}>Based in</Text>
-                  <Text style={styles.aboutAccountFactValue}>{getAccountCountryLabel(profileUser)}</Text>
-                </View>
-              </View>
-            </View>
-
-            {isProfileVerified ? (
-              <View style={styles.aboutAccountVerifiedPanel}>
-                <View style={styles.aboutAccountVerifiedPanelHeader}>
-                  <VerifiedBadge size={18} />
-                  <Text style={styles.aboutAccountVerifiedPanelTitle}>Verified Account</Text>
-                </View>
-                <Text style={styles.aboutAccountVerifiedPanelText}>
-                  This account has been verified as authentic by Iris. Identity verification helps keep the community safe.
+          <View style={[styles.identity, { borderBottomColor: c.border.light }]}>
+            <Avatar source={profileUser?.avatarURL} size={56} style={styles.avatar} />
+            <View style={styles.identityText}>
+              <Text style={[styles.displayName, { color: c.text.primary }]} numberOfLines={1}>
+                {profileUser?.displayName || profileUser?.username}
+              </Text>
+              <View style={styles.usernameRow}>
+                <Text style={[styles.username, { color: c.text.secondary }]} numberOfLines={1}>
+                  @{profileUser?.username}
                 </Text>
+                {isProfileVerified ? <VerifiedBadge size={18} style={styles.inlineBadge} /> : null}
               </View>
-            ) : null}
+            </View>
+          </View>
 
-            <View style={styles.aboutAccountFooter}>
-              <Text style={styles.aboutAccountFooterText}>
-                To help keep our community authentic, we're showing information about accounts on Iris.
+          <View style={styles.facts}>
+            <Fact
+              icon="calendar-outline"
+              label="Joined"
+              value={formatJoinedDate(profileUser?.createdAt)}
+              iconColor={c.accent.primary}
+              iconSurface={c.background.secondary}
+              labelColor={c.text.secondary}
+              valueColor={c.text.primary}
+            />
+            <Fact
+              icon="earth-outline"
+              label="Based in"
+              value={getLocationLabel(profileUser)}
+              iconColor={c.accent.primary}
+              iconSurface={c.background.secondary}
+              labelColor={c.text.secondary}
+              valueColor={c.text.primary}
+            />
+          </View>
+
+          {isProfileVerified ? (
+            <View style={[styles.verifiedPanel, { backgroundColor: c.background.secondary, borderColor: c.border.light }]}>
+              <VerifiedBadge size={16} />
+              <Text style={[styles.verifiedText, { color: c.text.secondary }]}>
+                Verified account
               </Text>
             </View>
-          </LinearGradient>
+          ) : null}
         </View>
       </View>
     </Modal>
   );
 }
 
+function Fact({
+  icon,
+  label,
+  value,
+  iconColor,
+  iconSurface,
+  labelColor,
+  valueColor,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  value: string;
+  iconColor: string;
+  iconSurface: string;
+  labelColor: string;
+  valueColor: string;
+}) {
+  return (
+    <View style={styles.factRow}>
+      <View style={[styles.factIcon, { backgroundColor: iconSurface }]}>
+        <Ionicons name={icon} size={18} color={iconColor} />
+      </View>
+      <View style={styles.factText}>
+        <Text style={[styles.factLabel, { color: labelColor }]}>{label}</Text>
+        <Text style={[styles.factValue, { color: valueColor }]}>{value}</Text>
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  aboutAccountOverlay: {
+  overlay: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  aboutAccountBackdrop: {
+  backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
   },
-  aboutAccountCard: {
+  card: {
     width: '85%',
     maxWidth: 400,
     borderRadius: borderRadius.xl,
-    overflow: 'hidden',
+    padding: spacing.xl,
+    borderWidth: 1,
     shadowColor: '#000',
-    shadowOpacity: 0.5,
+    shadowOpacity: 0.4,
     shadowRadius: 20,
     shadowOffset: { width: 0, height: 10 },
   },
-  aboutAccountCardGradient: {
-    width: '100%',
-    padding: spacing.xl,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  aboutAccountHeader: {
+  header: {
     flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.lg,
+  },
+  title: {
+    fontSize: typography.fontSize.lg,
+    fontWeight: typography.fontWeight.bold,
+  },
+  closeButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: spacing.xl,
-    position: 'relative',
   },
-  aboutAccountTitle: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold as any,
-    color: colors.text.primary,
-  },
-  aboutAccountCloseButton: {
-    position: 'absolute',
-    right: 0,
-    padding: spacing.xs,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 20,
-  },
-  aboutAccountIdentity: {
+  identity: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: spacing.xxl,
+    marginBottom: spacing.lg,
     paddingBottom: spacing.lg,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.08)',
   },
-  aboutAccountAvatar: {
+  avatar: {
     borderWidth: 2,
     borderColor: 'rgba(255,255,255,0.15)',
   },
-  aboutAccountIdentityText: {
+  identityText: {
     marginLeft: spacing.lg,
     flex: 1,
   },
-  aboutAccountNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  aboutAccountDisplayName: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold as any,
-    color: colors.text.primary,
+  displayName: {
+    fontSize: typography.fontSize.base,
+    fontWeight: typography.fontWeight.bold,
     marginBottom: 2,
   },
-  aboutAccountUsernameRow: {
+  usernameRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  aboutAccountUsername: {
-    fontSize: typography.fontSize.base,
-    color: colors.text.secondary,
+  username: {
+    fontSize: typography.fontSize.sm,
+    flexShrink: 1,
   },
-  aboutAccountInlineBadge: {
+  inlineBadge: {
     marginLeft: 4,
   },
-  aboutAccountFacts: {
-    gap: spacing.lg,
-    marginBottom: spacing.xl,
+  facts: {
+    gap: spacing.md,
   },
-  aboutAccountFactRow: {
+  factRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  aboutAccountFactIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(125, 211, 252, 0.1)',
+  factIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  aboutAccountFactText: {
+  factText: {
     marginLeft: spacing.md,
     flex: 1,
   },
-  aboutAccountFactLabel: {
-    fontSize: typography.fontSize.sm,
-    color: colors.text.secondary,
+  factLabel: {
+    fontSize: typography.fontSize.xs,
     marginBottom: 2,
   },
-  aboutAccountFactValue: {
+  factValue: {
     fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.semibold as any,
-    color: colors.text.primary,
+    fontWeight: typography.fontWeight.semibold,
   },
-  aboutAccountVerifiedPanel: {
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderRadius: borderRadius.lg,
-    padding: spacing.lg,
-    marginBottom: spacing.xl,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-  },
-  aboutAccountVerifiedPanelHeader: {
+  verifiedPanel: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    marginBottom: spacing.sm,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    marginTop: spacing.lg,
   },
-  aboutAccountVerifiedPanelTitle: {
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.bold as any,
-    color: colors.text.primary,
-  },
-  aboutAccountVerifiedPanelText: {
+  verifiedText: {
     fontSize: typography.fontSize.sm,
-    color: colors.text.secondary,
-    lineHeight: 20,
-  },
-  aboutAccountFooter: {
-    marginTop: spacing.md,
-  },
-  aboutAccountFooterText: {
-    fontSize: 13,
-    color: colors.text.muted,
-    textAlign: 'center',
-    lineHeight: 18,
+    fontWeight: typography.fontWeight.medium,
   },
 });

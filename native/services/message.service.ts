@@ -43,12 +43,26 @@ type DirectAccessCacheEntry = {
   expiresAt: number;
 };
 
+/**
+ * Deterministic document id for a 1:1 conversation. Both participants derive
+ * the same id, so the conversation can be resolved without a collection scan.
+ */
+export const buildDirectConversationId = (userId1: string, userId2: string): string => {
+  const sortedIds = [userId1, userId2].sort();
+  return `dm_${sortedIds[0]}_${sortedIds[1]}`;
+};
+
 export class MessageService {
   private static readonly CONVERSATION_CACHE_TTL_MS = 8000;
   private static readonly DIRECT_ACCESS_CACHE_TTL_MS = 12000;
+  private static readonly LEGACY_LOOKUP_TTL_MS = 5 * 60 * 1000;
 
   private readonly conversationCache = new Map<string, ConversationCacheEntry>();
   private readonly directAccessCache = new Map<string, DirectAccessCacheEntry>();
+  /** Memoised result of the legacy-ID lookup so repeat opens stay instant. */
+  private readonly legacyConversationCache = new Map<string, { id: string | null; expiresAt: number }>();
+  /** In-flight `getOrCreateDirectConversation` calls, keyed by participant pair. */
+  private readonly pendingConversationResolves = new Map<string, Promise<string>>();
 
   private getDirectAccessCacheKey(senderId: string, recipientId: string): string {
     return `${senderId}:${recipientId}`;
@@ -80,8 +94,16 @@ export class MessageService {
     const cached = this.getCachedConversation(conversationId);
     if (cached) return cached;
 
-    const conversationRef = doc(db, "conversations", conversationId);
-    const conversationSnap = await getDoc(conversationRef);
+    const conversationRef = doc(db, 'conversations', conversationId);
+    let conversationSnap = await getDoc(conversationRef);
+
+    // If the doc doesn't exist yet (e.g. just created, Firestore still propagating),
+    // wait briefly and retry once before giving up.
+    if (!conversationSnap.exists()) {
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      conversationSnap = await getDoc(conversationRef);
+    }
+
     if (!conversationSnap.exists()) return null;
 
     const conversation = { conversationId: conversationSnap.id, ...conversationSnap.data() } as Conversation;
@@ -175,53 +197,187 @@ export class MessageService {
     return access.direct;
   }
 
+  /**
+   * Resolve the conversation id for a pair of users without touching the
+   * network. Callers can use this to open a chat instantly and let the
+   * conversation document be created in the background.
+   */
+  getDirectConversationId(userId1: string, userId2: string): string {
+    return buildDirectConversationId(userId1, userId2);
+  }
+
+  /**
+   * Look for a conversation that was created before the deterministic-id
+   * scheme (those used an auto-generated Firestore id).
+   *
+   * The query intentionally filters on `participantIds` only: an additional
+   * `type == 'direct'` equality filter would require a composite index, and
+   * the missing index turned this into a multi-second stall (or a hard
+   * failure) every time a new chat was opened. Filtering on the single
+   * array field uses the default index and only reads the caller's own
+   * conversations.
+   */
+  private async findLegacyDirectConversation(
+    userId1: string,
+    userId2: string,
+    sortedIds: string[]
+  ): Promise<string | null> {
+    const cacheKey = `${sortedIds[0]}:${sortedIds[1]}`;
+    const now = Date.now();
+    const cached = this.legacyConversationCache.get(cacheKey);
+    if (cached && cached.expiresAt > now) return cached.id;
+
+    let legacyId: string | null = null;
+    try {
+      const legacyQ = query(
+        collection(db, 'conversations'),
+        where('participantIds', 'array-contains', userId1)
+      );
+      const legacySnapshot = await getDocs(legacyQ);
+      const legacyDoc = legacySnapshot.docs.find((d) => {
+        const data = d.data();
+        if (data.type !== 'direct') return false;
+        const parts: string[] = (data.participantIds ?? []).slice().sort();
+        return parts.length === 2 && parts[0] === sortedIds[0] && parts[1] === sortedIds[1];
+      });
+      if (legacyDoc) legacyId = legacyDoc.id;
+    } catch (error) {
+      // A missing index or an offline read must never block opening a chat.
+      console.warn('Legacy conversation lookup failed:', error);
+    }
+
+    this.legacyConversationCache.set(cacheKey, {
+      id: legacyId,
+      expiresAt: now + MessageService.LEGACY_LOOKUP_TTL_MS,
+    });
+    return legacyId;
+  }
+
+  /**
+   * Make sure the conversation document behind `conversationId` exists.
+   *
+   * The inbox opens a chat with the deterministic id straight away, so the
+   * document may not have been written yet. When it is missing the
+   * conversation is resolved (legacy id lookup) or created in the background,
+   * and the real id is returned — it can differ from `conversationId` when the
+   * pair still has a conversation from before the deterministic-id scheme.
+   */
+  async ensureDirectConversation(
+    userId1: string,
+    userId2: string,
+    conversationId: string
+  ): Promise<string> {
+    try {
+      const snap = await getDoc(doc(db, 'conversations', conversationId));
+      if (snap.exists()) return conversationId;
+    } catch (error) {
+      console.warn('Conversation existence check failed:', error);
+    }
+
+    try {
+      return await this.getOrCreateDirectConversation(userId1, userId2);
+    } catch (error) {
+      console.warn('Failed to ensure conversation:', error);
+      return conversationId;
+    }
+  }
+
   async getOrCreateDirectConversation(
     userId1: string,
     userId2: string
   ): Promise<string> {
-    const access = await this.getDirectMessageAccessCached(userId1, userId2);
+    const resolveKey = `${[userId1, userId2].sort().join(':')}`;
+    const inFlight = this.pendingConversationResolves.get(resolveKey);
+    if (inFlight) return inFlight;
+
+    const promise = this.resolveDirectConversation(userId1, userId2).finally(() => {
+      this.pendingConversationResolves.delete(resolveKey);
+    });
+    this.pendingConversationResolves.set(resolveKey, promise);
+    return promise;
+  }
+
+  private async resolveDirectConversation(
+    userId1: string,
+    userId2: string
+  ): Promise<string> {
+    const sortedIds = [userId1, userId2].sort();
+
+    // Use a deterministic conversation ID derived from both user IDs.
+    // This makes the document ID predictable and idempotent — concurrent calls
+    // from both sides always resolve to the same document, eliminating the race
+    // condition that caused duplicate conversations.
+    const deterministicId = buildDirectConversationId(userId1, userId2);
+    const conversationRef = doc(db, 'conversations', deterministicId);
+
+    // Check cache first
+    const cached = this.getCachedConversation(deterministicId);
+    if (cached) {
+      return deterministicId;
+    }
+
+    // The access check and the document lookup are independent, so run them
+    // together instead of paying for two sequential round trips.
+    const accessPromise = this.getDirectMessageAccessCached(userId1, userId2);
+    const conversationSnap = await getDoc(conversationRef);
+
+    if (conversationSnap.exists()) {
+      const access = await accessPromise;
+      if (!access.allowed) {
+        throw new Error(access.reason === 'blocked' ? 'Messaging unavailable for this account.' : 'This user only accepts messages from followers.');
+      }
+
+      // Conversation already exists — restore it if the user had deleted/archived it
+      try {
+        await updateDoc(conversationRef, {
+          deletedBy: arrayRemove(userId1),
+          archivedBy: arrayRemove(userId1),
+          // Clear the deletion cutoff so the user sees all messages going forward
+          [`deletionTimestamps.${userId1}`]: deleteField(),
+          updatedAt: serverTimestamp(),
+        });
+      } catch {
+        // no-op: legacy docs may not have these fields
+      }
+      this.invalidateConversationCache(deterministicId);
+      return deterministicId;
+    }
+
+    // ── Migration: look for an existing conversation with a legacy random ID ──
+    // Old conversations were created with auto-generated Firestore IDs. If one
+    // exists, keep using it so the message history stays in one place.
+    const [access, legacyId] = await Promise.all([
+      accessPromise,
+      this.findLegacyDirectConversation(userId1, userId2, sortedIds),
+    ]);
+
     if (!access.allowed) {
       throw new Error(access.reason === 'blocked' ? 'Messaging unavailable for this account.' : 'This user only accepts messages from followers.');
     }
 
-    const sortedIds = [userId1, userId2].sort();
-    const conversationsRef = collection(db, "conversations");
-    const q = query(
-      conversationsRef,
-      where("type", "==", "direct"),
-      where("participantIds", "array-contains", userId1)
-    );
-
-    const snapshot = await getDocs(q);
-    const existing = snapshot.docs.find((docSnap) => {
-      const data = docSnap.data();
-      const participants = data.participantIds.sort();
-      return participants.length === 2 && participants[0] === sortedIds[0] && participants[1] === sortedIds[1];
-    });
-
-    if (existing) {
-      const existingRef = doc(db, "conversations", existing.id);
+    if (legacyId) {
+      // Restore deleted/archived state and return the legacy ID.
       try {
-        await updateDoc(existingRef, {
+        await updateDoc(doc(db, 'conversations', legacyId), {
           deletedBy: arrayRemove(userId1),
           archivedBy: arrayRemove(userId1),
+          [`deletionTimestamps.${userId1}`]: deleteField(),
           updatedAt: serverTimestamp(),
         });
       } catch {
-        // no-op: if fields are missing/legacy, conversation can still be reused
+        // no-op
       }
-      this.invalidateConversationCache(existing.id);
-      return existing.id;
+      this.invalidateConversationCache(legacyId);
+      return legacyId;
     }
 
-    const conversationRef = doc(collection(db, "conversations"));
-    const conversationId = conversationRef.id;
+    // No existing conversation — create one with the deterministic ID
     const clientTimestamp = Date.now();
     const restrictedBy: string[] = [];
 
     await setDoc(conversationRef, {
-      conversationId: conversationRef.id,
-      type: "direct",
+      conversationId: deterministicId,
+      type: 'direct',
       participantIds: sortedIds,
       participantCount: 2,
       createdBy: userId1,
@@ -240,7 +396,7 @@ export class MessageService {
       restrictedBy,
     });
 
-    return conversationId;
+    return deterministicId;
   }
 
   async createGroupConversation(
@@ -1440,9 +1596,10 @@ export class MessageService {
       throw new Error("Conversation not found. Please create a conversation first.");
     }
     const isFirstMessage = !conversation.lastMessage || conversation.lastMessage === null;
-    let updatedRestrictedBy = conversation.restrictedBy || [];
+    let updatedRestrictedBy = (conversation.restrictedBy || []).filter(Boolean);
     const removedMembers = { ...((conversation as any)?.removedMembers || {}) } as Record<string, { removedBy: string; removedAtMs: number }>;
     const activeParticipantIds = (conversation.participantIds || []).filter((pid) => !!pid && !removedMembers[pid]);
+    const senderId = String(messageData.senderId || '');
 
     if (conversation.type === "direct") {
       const recipientId = conversation.participantIds.find((id) => id !== messageData.senderId);
@@ -1451,8 +1608,15 @@ export class MessageService {
         if (!access.allowed) {
           throw new Error(access.reason === 'blocked' ? 'Messaging unavailable for this account.' : 'This user only accepts messages from followers.');
         }
-        if ((isFirstMessage || access.requiresRequest) && access.requiresRequest && !updatedRestrictedBy.includes(recipientId)) {
-          updatedRestrictedBy = [...updatedRestrictedBy, recipientId];
+        if ((isFirstMessage || access.requiresRequest) && access.requiresRequest) {
+          if (!updatedRestrictedBy.includes(recipientId)) {
+            updatedRestrictedBy = [...updatedRestrictedBy, recipientId];
+          }
+          if (updatedRestrictedBy.includes(senderId)) {
+            updatedRestrictedBy = updatedRestrictedBy.filter((id) => id !== senderId);
+          }
+        } else {
+          updatedRestrictedBy = [];
         }
       }
     } else if (conversation.type === "group") {
@@ -1525,6 +1689,10 @@ export class MessageService {
       unreadCounts,
       restrictedBy: updatedRestrictedBy,
       updatedAt: serverTimestamp(),
+      // Clear the sender's deletion timestamp so their message cutoff resets.
+      // Without this, applyDeletionCutoff filters out all messages sent after
+      // the previous "delete for me" action, making them invisible to the sender.
+      [`deletionTimestamps.${persistedMessageData.senderId}`]: deleteField(),
     };
 
     if (e2eePrepared.conversationE2EE) {

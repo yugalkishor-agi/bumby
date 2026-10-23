@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, TextInput, StyleSheet, ViewStyle, TextInputProps } from 'react-native';
-import { colors, commonStyles, typography } from '../../styles/theme';
+import { createCommonStyles, typography, useColors } from '../../styles/theme';
 
 interface InputProps extends TextInputProps {
   containerStyle?: ViewStyle;
@@ -19,6 +19,9 @@ export default function Input({
   style,
   ...props
 }: InputProps) {
+  const c = useColors();
+  const styles = useMemo(() => createStyles(c), [c]);
+
   const inputContainerStyles = [
     styles.container,
     leftIcon && styles.withLeftIcon,
@@ -40,7 +43,7 @@ export default function Input({
       {leftIcon && <View style={styles.leftIconContainer}>{leftIcon}</View>}
       <TextInput
         style={inputStyles}
-        placeholderTextColor={colors.text.muted}
+        placeholderTextColor={c.text.muted}
         {...props}
       />
       {rightIcon && <View style={styles.rightIconContainer}>{rightIcon}</View>}
@@ -48,46 +51,50 @@ export default function Input({
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    ...commonStyles.input.base,
-    flexDirection: 'row',
-    alignItems: 'center',
-    position: 'relative',
-  },
-  withLeftIcon: {
-    paddingLeft: 48,
-  },
-  withRightIcon: {
-    paddingRight: 48,
-  },
-  errorContainer: {
-    borderColor: colors.accent.error,
-  },
-  successContainer: {
-    borderColor: colors.accent.success,
-  },
-  input: {
-    flex: 1,
-    height: '100%',
-    color: colors.text.primary,
-    fontSize: typography.fontSize.base,
-    paddingHorizontal: 0,
-  },
-  inputWithLeftIcon: {
-    paddingLeft: 0,
-  },
-  inputWithRightIcon: {
-    paddingRight: 0,
-  },
-  leftIconContainer: {
-    position: 'absolute',
-    left: 16,
-    zIndex: 1,
-  },
-  rightIconContainer: {
-    position: 'absolute',
-    right: 16,
-    zIndex: 1,
-  },
-});
+const createStyles = (c: ReturnType<typeof useColors>) => {
+  const common = createCommonStyles(c);
+
+  return StyleSheet.create({
+    container: {
+      ...common.input.base,
+      flexDirection: 'row',
+      alignItems: 'center',
+      position: 'relative',
+    },
+    withLeftIcon: {
+      paddingLeft: 48,
+    },
+    withRightIcon: {
+      paddingRight: 48,
+    },
+    errorContainer: {
+      borderColor: c.accent.error,
+    },
+    successContainer: {
+      borderColor: c.accent.success,
+    },
+    input: {
+      flex: 1,
+      height: '100%',
+      color: c.text.primary,
+      fontSize: typography.fontSize.base,
+      paddingHorizontal: 0,
+    },
+    inputWithLeftIcon: {
+      paddingLeft: 0,
+    },
+    inputWithRightIcon: {
+      paddingRight: 0,
+    },
+    leftIconContainer: {
+      position: 'absolute',
+      left: 16,
+      zIndex: 1,
+    },
+    rightIconContainer: {
+      position: 'absolute',
+      right: 16,
+      zIndex: 1,
+    },
+  });
+};

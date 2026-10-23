@@ -21,7 +21,6 @@ export interface Post {
   likedByPreview?: Array<{ userId: string; username?: string; displayName?: string; avatarURL?: string }>;
   latestCommentText?: string;
   latestCommentUser?: string;
-  backgroundMusic?: any;
   taggedUsers?: Array<{ userId: string; username?: string }>;
   collaborators?: Array<{ userId: string; username?: string; displayName?: string; avatarURL?: string; status?: string }>;
   isLiked: boolean;

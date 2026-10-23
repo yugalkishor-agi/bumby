@@ -1,5 +1,6 @@
 import { registerRootComponent } from 'expo';
 import { installAppLogCapture } from './native/utils/appLog';
+import './native/services/zegoCall.bootstrap';
 
 // Capture console output and unhandled errors from the very start of the
 // bundle, before the app module (and everything it logs) is loaded.

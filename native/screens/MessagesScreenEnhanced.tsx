@@ -187,25 +187,29 @@ export default function MessagesScreenEnhanced() {
     setActionSheetVisible(true);
   };
 
-  const handleActiveUserPress = async (activeUser: User) => {
+  const handleActiveUserPress = (activeUser: User) => {
     if (!currentUserId) return;
-    try {
-      const existingConversation = conversations.find(conv => {
-        const otherUser = conversationUsers[conv.conversationId];
-        return otherUser?.userId === activeUser.userId;
-      });
 
-      if (existingConversation) {
-        const otherUser = conversationUsers[existingConversation.conversationId];
-        navigation.navigate('Chat', buildChatParams(otherUser, existingConversation.conversationId));
-      } else {
-        const conversationId = await messageService.getOrCreateDirectConversation(currentUserId, activeUser.userId);
-        navigation.navigate('Chat', buildChatParams(activeUser, conversationId));
-      }
-    } catch (error) {
-      console.error('Failed to start chat with active user:', error);
-      Alert.alert('Error', 'Unable to start chat. Please try again.');
+    // Open the chat straight away. Resolving the conversation needs several
+    // Firestore round trips (access check + document read/create), and awaiting
+    // them here left the inbox hanging with no feedback.
+    //
+    // A conversation that is already in the inbox list is reused as-is so the
+    // history stays in one place; otherwise the deterministic id is used and
+    // the chat screen creates the document in the background.
+    const existingConversation = conversations.find((conv) => {
+      const otherUser = conversationUsers[conv.conversationId];
+      return otherUser?.userId === activeUser.userId;
+    });
+
+    if (existingConversation) {
+      const otherUser = conversationUsers[existingConversation.conversationId] || activeUser;
+      navigation.navigate('Chat', buildChatParams(otherUser, existingConversation.conversationId));
+      return;
     }
+
+    const conversationId = messageService.getDirectConversationId(currentUserId, activeUser.userId);
+    navigation.navigate('Chat', buildChatParams(activeUser, conversationId));
   };
 
   const displayedConversations = activeTab === 'requests' 

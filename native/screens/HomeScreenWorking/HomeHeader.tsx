@@ -32,7 +32,7 @@ export const HomeHeader = React.memo(({
   return (
     <View style={styles.header}>
       <View style={styles.headerSide} />
-      <Text style={styles.headerTitle}>Iris</Text>
+      <Text style={styles.headerTitle}>Bumby</Text>
       <View style={[styles.headerSide, styles.headerRight]}>
         <TouchableOpacity
           style={styles.headerButton}

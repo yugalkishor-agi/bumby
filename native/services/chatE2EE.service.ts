@@ -394,14 +394,21 @@ class ChatE2EEService {
 
   async hydrateMessages(conversationId: string, currentUserId: string, messages: Message[]): Promise<Message[]> {
     if (!Array.isArray(messages) || messages.length === 0) return messages;
-    const needsDecrypt = messages.some((message: any) => message?.encryptedPayload?.ciphertext);
+    // Any message that carries an encrypted payload must be resolved here. The
+    // persisted `text` is blank for encrypted messages, so falling through
+    // would render an empty bubble instead of readable content.
+    const needsDecrypt = messages.some((message: any) => Boolean(message?.encryptedPayload));
     if (!needsDecrypt) return messages;
-    if (!this.supportsCrypto()) {
-      return messages.map((message: any) =>
-        message?.encryptedPayload?.ciphertext
+
+    const lockEncryptedMessages = (list: Message[]): Message[] =>
+      list.map((message: any) =>
+        message?.encryptedPayload
           ? ({ ...message, text: 'Encrypted message', e2eeState: 'locked' } as Message)
           : message
       );
+
+    if (!this.supportsCrypto()) {
+      return lockEncryptedMessages(messages);
     }
 
     let meta = await this.getConversationMeta(conversationId);
@@ -409,25 +416,20 @@ class ChatE2EEService {
       meta = await this.getConversationMeta(conversationId, { forceRefresh: true });
     }
     if (!meta?.enabled) {
-      return messages.map((message: any) =>
-        message?.encryptedPayload?.ciphertext
-          ? ({ ...message, text: 'Encrypted message', e2eeState: 'locked' } as Message)
-          : message
-      );
+      return lockEncryptedMessages(messages);
     }
 
     const conversationKey = await this.resolveConversationKey(conversationId, currentUserId, meta);
     if (!conversationKey) {
-      return messages.map((message: any) =>
-        message?.encryptedPayload?.ciphertext
-          ? ({ ...message, text: 'Encrypted message', e2eeState: 'locked' } as Message)
-          : message
-      );
+      return lockEncryptedMessages(messages);
     }
 
     return Promise.all(
       messages.map(async (message: any) => {
-        if (!message?.encryptedPayload?.ciphertext) return message as Message;
+        if (!message?.encryptedPayload) return message as Message;
+        if (!message?.encryptedPayload?.ciphertext) {
+          return { ...message, text: 'Encrypted message', e2eeState: 'locked' } as Message;
+        }
         try {
           const iv = base64ToBytes(String(message.encryptedPayload.iv || ''));
           const ciphertext = base64ToBytes(String(message.encryptedPayload.ciphertext || ''));

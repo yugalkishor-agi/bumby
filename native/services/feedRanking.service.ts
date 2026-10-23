@@ -25,7 +25,6 @@ type RankedFeedItem = {
   viewsCount?: number;
   isLiked?: boolean;
   createdAt?: any;
-  backgroundMusic?: any;
   followersCount?: number;
   authorFollowersCount?: number;
   stats?: {
@@ -152,7 +151,7 @@ function normalizeProfile(profile: FeedBehaviorProfile | null): FeedBehaviorProf
 }
 
 function getMediaKey(item: RankedFeedItem) {
-  return item.backgroundMusic?.streamURL ? 'music' : (item.mediaType || 'photo');
+  return item.mediaType || 'photo';
 }
 
 function getEngagementScore(item: RankedFeedItem) {

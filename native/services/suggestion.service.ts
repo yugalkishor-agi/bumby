@@ -314,12 +314,12 @@ class SuggestionService {
       // Check if new user
       const daysSinceJoined = this.getDaysSince(suggestedUser.createdAt);
       if (daysSinceJoined < 7) {
-        return 'New to Iris';
+        return 'New to Bumby';
       }
       
       // Check if popular
       if ((suggestedUser.followersCount || 0) > 1000) {
-        return 'Popular on Iris';
+        return 'Popular on Bumby';
       }
       
       // Default
@@ -858,7 +858,7 @@ class SuggestionService {
 
   private getActivityScore(candidate: User): { score: number; label: string } {
     const lastSeenValue = (candidate as any)?.lastSeen;
-    if (!lastSeenValue) return { score: 0, label: 'Active on Iris' };
+    if (!lastSeenValue) return { score: 0, label: 'Active on Bumby' };
 
     const lastSeen = lastSeenValue?.toDate ? lastSeenValue.toDate() : (lastSeenValue instanceof Date ? lastSeenValue : new Date(lastSeenValue));
     const diffMinutes = (Date.now() - lastSeen.getTime()) / (1000 * 60);
@@ -867,7 +867,7 @@ class SuggestionService {
     if (diffMinutes <= 60) return { score: 9, label: 'Recently active' };
     if (diffMinutes <= 360) return { score: 6.5, label: 'Active today' };
     if (diffMinutes <= 1440) return { score: 4.5, label: 'Around today' };
-    return { score: 1.75, label: 'Active on Iris' };
+    return { score: 1.75, label: 'Active on Bumby' };
   }
 
   async getPeopleLikeYouSuggestions(userId: string, limit: number = 8): Promise<SuggestedUser[]> {

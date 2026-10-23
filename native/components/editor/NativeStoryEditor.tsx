@@ -18,7 +18,6 @@ import { TextTool } from './Tools/TextTool';
 import { DrawingTool } from './Tools/DrawingTool';
 import { StickerTool } from './Tools/StickerTool';
 import { FilterTool } from './Tools/FilterTool';
-import { MusicTool } from './Tools/MusicTool';
 import { WidgetTool } from './Tools/WidgetTool';
 import { exportStory as exportStoryImage, exportMetadata } from './SkiaCanvas/SkiaExporter';
 
@@ -191,7 +190,6 @@ export function NativeStoryEditor({
             width: store.canvasWidth,
             height: store.canvasHeight,
           },
-          music: store.music,
           ...exportResult.metadata,
         },
       };
@@ -250,7 +248,6 @@ export function NativeStoryEditor({
           {activeTool === 'draw' && <DrawingTool />}
           {activeTool === 'sticker' && <StickerTool />}
           {activeTool === 'filter' && <FilterTool />}
-          {activeTool === 'music' && <MusicTool onClose={() => setActiveTool('none')} />}
           {activeTool === 'widget' && <WidgetTool onClose={() => setActiveTool('none')} />}
 
           {/* Export Overlay */}

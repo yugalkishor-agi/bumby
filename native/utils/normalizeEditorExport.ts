@@ -78,7 +78,7 @@ function normalizeFilters(payload: any, meta: any) {
 }
 
 function normalizeAudioOverlay(payload: any, meta: any) {
-  const raw = payload?.audioOverlay || meta?.audioOverlay || payload?.music || meta?.music;
+  const raw = payload?.audioOverlay || meta?.audioOverlay;
   if (!raw || typeof raw !== 'object') return undefined;
 
   const uri = raw.uri || raw.url || raw.src || raw.trackUrl;
@@ -237,7 +237,7 @@ export function normalizeEditorExport(payload: any): NormalizedExport {
         if (widgetKind === 'ask' || widgetKind === 'suggest') return { w: 0.85, h: 0.18 };
         if (widgetKind === 'slider' || widgetKind === 'rating') return { w: 0.85, h: 0.16 };
         if (widgetKind === 'poll' || widgetKind === 'quiz') return { w: 0.85, h: 0.32 };
-        if (widgetKind === 'mention' || widgetKind === 'hashtag' || widgetKind === 'time' || widgetKind === 'music') return { w: 0.42, h: 0.09 };
+        if (widgetKind === 'mention' || widgetKind === 'hashtag' || widgetKind === 'time') return { w: 0.42, h: 0.09 };
         return { w: 0.3, h: 0.12 };
       };
 
@@ -247,7 +247,7 @@ export function normalizeEditorExport(payload: any): NormalizedExport {
       const widthNorm = toNormScalar(w?.transform?.w ?? w?.size?.w, SW, fallbackSize.w);
       const heightNorm = toNormScalar(w?.transform?.h ?? w?.size?.h, SH, fallbackSize.h);
       const anchorRaw = String(w?.transform?.anchor || w?.anchor || '').toLowerCase();
-      const inferTopLeftKinds = new Set(['poll', 'slider', 'ask', 'question', 'quiz', 'mention', 'hashtag', 'time', 'rating', 'suggest', 'music']);
+      const inferTopLeftKinds = new Set(['poll', 'slider', 'ask', 'question', 'quiz', 'mention', 'hashtag', 'time', 'rating', 'suggest']);
       const isTopLeft = anchorRaw.includes('top') || (!anchorRaw && !hasExplicitSize && inferTopLeftKinds.has(kind));
 
       if (isTopLeft) {
@@ -341,15 +341,6 @@ export function normalizeEditorExport(payload: any): NormalizedExport {
       if (kind === 'hashtag') {
         const tag = (widgetData?.tag) || '#hashtag';
         return { ...base, type: 'hashtag', content: String(tag) };
-      }
-      if (kind === 'music') {
-        const title = String((widgetData?.title) || (widgetData?.name) || (widgetData?.text) || 'Audio Track');
-        const artist = String((widgetData?.artist) || '');
-        return {
-          ...base,
-          type: 'music',
-          content: { title, name: title, artist, uri: widgetData?.uri || '' },
-        };
       }
       return null;
     };

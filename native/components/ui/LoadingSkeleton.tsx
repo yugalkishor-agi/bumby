@@ -90,6 +90,23 @@ export function UserSkeleton() {
   );
 }
 
+/**
+ * Row shaped like the "people" lists (likes, followers, suggestions):
+ * avatar + name/handle stack + a trailing action pill.
+ */
+export function PeopleRowSkeleton({ withAction = true }: { withAction?: boolean }) {
+  return (
+    <View style={styles.peopleRowSkeleton}>
+      <LoadingSkeleton width={44} height={44} borderRadius={22} />
+      <View style={styles.peopleRowSkeletonBody}>
+        <LoadingSkeleton width={120} height={15} borderRadius={999} />
+        <LoadingSkeleton width={84} height={12} borderRadius={999} style={{ marginTop: 6 }} />
+      </View>
+      {withAction ? <LoadingSkeleton width={78} height={32} borderRadius={8} /> : null}
+    </View>
+  );
+}
+
 export function CommentSkeleton() {
   return (
     <View style={styles.commentSkeleton}>
@@ -159,18 +176,24 @@ export function ButtonLoadingSkeleton({
 export function ScreenSkeleton({
   variant = 'list',
   rows = 5,
+  showHeader = true,
 }: {
-  variant?: 'list' | 'grid' | 'comments' | 'cards' | 'chat';
+  variant?: 'list' | 'grid' | 'comments' | 'cards' | 'chat' | 'people';
   rows?: number;
+  showHeader?: boolean;
 }) {
+  const header = showHeader ? (
+    <View style={styles.screenHeader}>
+      <LoadingSkeleton width={28} height={28} borderRadius={14} />
+      <LoadingSkeleton width={132} height={24} borderRadius={12} />
+      <LoadingSkeleton width={28} height={28} borderRadius={14} />
+    </View>
+  ) : null;
+
   if (variant === 'grid') {
     return (
       <View style={styles.screenSkeleton}>
-        <View style={styles.screenHeader}>
-          <LoadingSkeleton width={28} height={28} borderRadius={14} />
-          <LoadingSkeleton width={140} height={24} borderRadius={12} />
-          <LoadingSkeleton width={28} height={28} borderRadius={14} />
-        </View>
+        {header}
         <GridSkeleton rows={rows} />
       </View>
     );
@@ -179,11 +202,7 @@ export function ScreenSkeleton({
   if (variant === 'comments') {
     return (
       <View style={styles.screenSkeleton}>
-        <View style={styles.screenHeader}>
-          <LoadingSkeleton width={28} height={28} borderRadius={14} />
-          <LoadingSkeleton width={120} height={24} borderRadius={12} />
-          <LoadingSkeleton width={28} height={28} borderRadius={14} />
-        </View>
+        {header}
         {Array.from({ length: rows }).map((_, index) => (
           <CommentSkeleton key={index} />
         ))}
@@ -194,11 +213,7 @@ export function ScreenSkeleton({
   if (variant === 'cards') {
     return (
       <View style={styles.screenSkeleton}>
-        <View style={styles.screenHeader}>
-          <LoadingSkeleton width={28} height={28} borderRadius={14} />
-          <LoadingSkeleton width={148} height={24} borderRadius={12} />
-          <LoadingSkeleton width={28} height={28} borderRadius={14} />
-        </View>
+        {header}
         {Array.from({ length: rows }).map((_, index) => (
           <View key={index} style={styles.cardSkeleton}>
             <LoadingSkeleton width={42} height={42} borderRadius={21} />
@@ -239,13 +254,20 @@ export function ScreenSkeleton({
     );
   }
 
+  if (variant === 'people') {
+    return (
+      <View style={styles.screenSkeleton}>
+        {header}
+        {Array.from({ length: rows }).map((_, index) => (
+          <PeopleRowSkeleton key={index} />
+        ))}
+      </View>
+    );
+  }
+
   return (
     <View style={styles.screenSkeleton}>
-      <View style={styles.screenHeader}>
-        <LoadingSkeleton width={28} height={28} borderRadius={14} />
-        <LoadingSkeleton width={132} height={24} borderRadius={12} />
-        <LoadingSkeleton width={28} height={28} borderRadius={14} />
-      </View>
+      {header}
       {Array.from({ length: rows }).map((_, index) => (
         <UserSkeleton key={index} />
       ))}
@@ -280,6 +302,16 @@ const styles = StyleSheet.create({
   userSkeletonText: {
     marginLeft: spacing.sm,
     flex: 1,
+  },
+  peopleRowSkeleton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+  },
+  peopleRowSkeletonBody: {
+    flex: 1,
+    marginLeft: spacing.md,
   },
   commentSkeleton: {
     flexDirection: 'row',

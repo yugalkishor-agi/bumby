@@ -19,7 +19,6 @@ const TOOLS: ToolConfig[] = [
   { id: 'draw', icon: 'brush', label: 'Draw' },
   { id: 'sticker', icon: 'happy', label: 'Sticker' },
   { id: 'filter', icon: 'color-filter', label: 'Filter' },
-  { id: 'music', icon: 'musical-notes', label: 'Music' },
   { id: 'widget', icon: 'apps', label: 'Widget' },
 ];
 

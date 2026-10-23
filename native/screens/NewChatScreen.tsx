@@ -65,7 +65,8 @@ export default function NewChatScreen() {
   };
 
   const handleSelectUser = (selectedUser: User) => {
-    (navigation as any).navigate('Chat', { userId: selectedUser.userId });
+    const conversationId = user ? messageService.getDirectConversationId(user.userId, selectedUser.userId) : undefined;
+    (navigation as any).navigate('Chat', { userId: selectedUser.userId, ...(conversationId ? { conversationId } : {}) });
   };
 
   const renderUser = ({ item }: { item: User }) => (

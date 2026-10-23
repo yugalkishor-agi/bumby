@@ -120,7 +120,7 @@ export default function CloseFriendsScreen() {
       </View>
 
       {loading ? (
-        <ScreenSkeleton variant="list" rows={6} />
+        <ScreenSkeleton variant="people" rows={7} showHeader={false} />
       ) : (
         <FlashList estimatedItemSize={100}
           data={filteredUsers}

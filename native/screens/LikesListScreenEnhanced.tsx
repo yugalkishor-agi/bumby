@@ -287,8 +287,7 @@ export default function LikesListScreenEnhanced() {
         </View>
 
         <View style={styles.loadingContainer}>
-          <ScreenSkeleton variant="list" rows={6} />
-          <Text style={styles.loadingText}>Loading likes...</Text>
+          <ScreenSkeleton variant="people" rows={7} showHeader={false} />
         </View>
       </SafeAreaView>
     );
@@ -346,13 +345,6 @@ const styles = StyleSheet.create({
   },
   loadingContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    fontSize: 16,
-    color: colors.text.secondary,
-    marginTop: 12,
   },
   headerContainer: {
     paddingHorizontal: 16,

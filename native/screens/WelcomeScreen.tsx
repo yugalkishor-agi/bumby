@@ -8,7 +8,7 @@ export default function WelcomeScreen({ navigation }: any) {
     <View style={styles.container}>
       <View style={styles.logoSection}>
         <Image
-          source={require('../../public/Iris-logo-splesh-screen.png')}
+          source={require('../../assets/Images/bumbylogo.png')}
           style={styles.logo}
           contentFit="contain"
         />
@@ -63,7 +63,7 @@ const styles = StyleSheet.create({
   logo: {
     width: 140,
     height: 140,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: '#000000',
     borderRadius: 24,
     padding: 16,
   },

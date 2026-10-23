@@ -218,14 +218,6 @@ export function exportMetadata(store: any) {
       blur: store.filters.blur,
       temperature: store.filters.temperature,
     },
-    music: store.music ? {
-      uri: store.music.uri,
-      name: store.music.name,
-      duration: store.music.duration,
-      trimStart: store.music.trimStart,
-      trimEnd: store.music.trimEnd,
-      volume: store.music.volume,
-    } : null,
   };
 }
 

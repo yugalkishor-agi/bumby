@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { TouchableOpacity, Text, StyleSheet, ViewStyle, TextStyle, ActivityIndicator, View } from 'react-native';
-import { colors, commonStyles, typography } from '../../styles/theme';
+import { createCommonStyles, typography, useColors } from '../../styles/theme';
 
 interface ButtonProps {
   title: string;
@@ -29,6 +29,9 @@ export default function Button({
   style,
   textStyle,
 }: ButtonProps) {
+  const c = useColors();
+  const styles = useMemo(() => createStyles(c), [c]);
+
   const buttonStyles = [
     styles.button,
     variant === 'primary' && styles.primaryButton,
@@ -52,7 +55,7 @@ export default function Button({
   ];
 
   const resolvedLoadingText = loadingText || title;
-  const spinnerColor = variant === 'secondary' ? colors.text.primary : colors.text.inverse;
+  const spinnerColor = variant === 'secondary' ? c.text.primary : c.accent.onAccent;
 
   return (
     <TouchableOpacity
@@ -70,61 +73,65 @@ export default function Button({
   );
 }
 
-const styles = StyleSheet.create({
-  button: {
-    ...commonStyles.button.primary,
-    flexDirection: 'row',
-    gap: 8,
-  },
-  contentWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  loader: {
-    marginLeft: 4,
-  },
-  primaryButton: {
-    backgroundColor: colors.interactive.primary,
-  },
-  secondaryButton: {
-    ...commonStyles.button.secondary,
-  },
-  dangerButton: {
-    backgroundColor: colors.accent.error,
-  },
-  smallButton: {
-    height: 40,
-    paddingHorizontal: 16,
-  },
-  largeButton: {
-    height: 56,
-    paddingHorizontal: 32,
-  },
-  fullWidth: {
-    width: '100%',
-  },
-  disabled: {
-    opacity: 0.5,
-  },
-  buttonText: {
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.semibold,
-  },
-  primaryText: {
-    color: colors.text.inverse,
-  },
-  secondaryText: {
-    color: colors.text.primary,
-  },
-  dangerText: {
-    color: colors.text.primary,
-  },
-  smallText: {
-    fontSize: typography.fontSize.sm,
-  },
-  largeText: {
-    fontSize: typography.fontSize.lg,
-  },
-});
+const createStyles = (c: ReturnType<typeof useColors>) => {
+  const common = createCommonStyles(c);
+
+  return StyleSheet.create({
+    button: {
+      ...common.button.primary,
+      flexDirection: 'row',
+      gap: 8,
+    },
+    contentWrap: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+    },
+    loader: {
+      marginLeft: 4,
+    },
+    primaryButton: {
+      backgroundColor: c.interactive.primary,
+    },
+    secondaryButton: {
+      ...common.button.secondary,
+    },
+    dangerButton: {
+      backgroundColor: c.accent.error,
+    },
+    smallButton: {
+      height: 40,
+      paddingHorizontal: 16,
+    },
+    largeButton: {
+      height: 56,
+      paddingHorizontal: 32,
+    },
+    fullWidth: {
+      width: '100%',
+    },
+    disabled: {
+      opacity: 0.5,
+    },
+    buttonText: {
+      fontSize: typography.fontSize.base,
+      fontWeight: typography.fontWeight.semibold,
+    },
+    primaryText: {
+      color: c.text.inverse,
+    },
+    secondaryText: {
+      color: c.text.primary,
+    },
+    dangerText: {
+      color: c.accent.onAccent,
+    },
+    smallText: {
+      fontSize: typography.fontSize.sm,
+    },
+    largeText: {
+      fontSize: typography.fontSize.lg,
+    },
+  });
+};

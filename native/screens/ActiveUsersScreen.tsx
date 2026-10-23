@@ -9,20 +9,24 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+import { useAuth } from '../contexts/AuthContext';
+import { messageService } from '../services/message.service';
 import { ActiveUsersList } from '../components/users/ActiveUsersList';
 import { colors, spacing, typography, borderRadius } from '../styles/theme';
 import type { User } from '../types/database';
 
 export default function ActiveUsersScreen() {
   const navigation = useNavigation();
+  const { user } = useAuth();
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
 
   const handleUserPress = (user: User) => {
     (navigation as any).navigate('UserProfile', { userId: user.userId });
   };
 
-  const handleMessageUser = (user: User) => {
-    (navigation as any).navigate('Chat', { userId: user.userId });
+  const handleMessageUser = (targetUser: User) => {
+    const conversationId = user ? messageService.getDirectConversationId(user.userId, targetUser.userId) : undefined;
+    (navigation as any).navigate('Chat', { userId: targetUser.userId, ...(conversationId ? { conversationId } : {}) });
   };
 
   return (

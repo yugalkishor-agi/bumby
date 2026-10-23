@@ -1,7 +1,7 @@
-import { InlineLoadingSkeleton, ButtonLoadingSkeleton } from '../components/ui/LoadingSkeleton';
+import { InlineLoadingSkeleton } from '../components/ui/LoadingSkeleton';
 import React, { useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
+  Alert,
   SafeAreaView,
   StyleSheet,
   Text,
@@ -11,36 +11,30 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
-import { useAuth } from '../contexts/AuthContext';
-import { settingsService } from '../services/settings.service';
-import { useColors, spacing, typography, borderRadius } from '../styles/theme';
+import { spacing, typography, borderRadius, ThemeColors, useColors } from '../styles/theme';
 
 type ThemePreference = 'light' | 'dark' | 'auto';
 
+const THEME_OPTIONS: Array<{ id: ThemePreference; name: string; icon: keyof typeof Ionicons.glyphMap }> = [
+  { id: 'light', name: 'Light', icon: 'sunny-outline' },
+  { id: 'dark', name: 'Dark', icon: 'moon-outline' },
+  { id: 'auto', name: 'System', icon: 'phone-portrait-outline' },
+];
+
 export default function ThemeScreen() {
   const navigation = useNavigation();
-  const { user } = useAuth();
   const { preference, setPreference } = useTheme();
   const themeColors = useColors();
   const styles = useMemo(() => createStyles(themeColors), [themeColors]);
   const [saving, setSaving] = useState(false);
 
-  const themeOptions: Array<{ id: ThemePreference; name: string; icon: keyof typeof Ionicons.glyphMap }> = [
-    { id: 'light', name: 'Light', icon: 'sunny-outline' },
-    { id: 'dark', name: 'Dark', icon: 'moon-outline' },
-    { id: 'auto', name: 'System Default', icon: 'phone-portrait-outline' },
-  ];
-
   const handleThemeChange = async (value: ThemePreference) => {
     if (saving || preference === value) return;
     setSaving(true);
     try {
-      setPreference(value);
-      if (user?.userId) {
-        await settingsService.updateSettings(user.userId, { theme: value } as any);
-      }
-    } catch (error) {
-      console.error('Failed to update theme:', error);
+      await setPreference(value);
+    } catch {
+      Alert.alert('Update failed', "Couldn't change the theme. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -49,7 +43,7 @@ export default function ThemeScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
+        <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <Ionicons name="chevron-back" size={24} color={themeColors.text.primary} />
         </TouchableOpacity>
         <Text style={styles.title}>Theme</Text>
@@ -57,12 +51,13 @@ export default function ThemeScreen() {
       </View>
 
       <View style={styles.content}>
-        {themeOptions.map((option) => (
+        {THEME_OPTIONS.map((option) => (
           <TouchableOpacity
             key={option.id}
             style={[styles.option, preference === option.id && styles.selectedOption]}
             onPress={() => handleThemeChange(option.id)}
             disabled={saving}
+            activeOpacity={0.85}
           >
             <View style={styles.optionLeft}>
               <Ionicons name={option.icon} size={22} color={themeColors.accent.primary} />
@@ -80,7 +75,7 @@ export default function ThemeScreen() {
         {saving && (
           <View style={styles.savingRow}>
             <InlineLoadingSkeleton />
-            <Text style={styles.savingText}>Saving preference...</Text>
+            <Text style={styles.savingText}>Saving…</Text>
           </View>
         )}
       </View>
@@ -88,7 +83,7 @@ export default function ThemeScreen() {
   );
 }
 
-const createStyles = (themeColors: ReturnType<typeof useColors>) =>
+const createStyles = (themeColors: ThemeColors) =>
   StyleSheet.create({
     container: {
       flex: 1,
@@ -151,4 +146,3 @@ const createStyles = (themeColors: ReturnType<typeof useColors>) =>
       fontSize: typography.fontSize.sm,
     },
   });
-

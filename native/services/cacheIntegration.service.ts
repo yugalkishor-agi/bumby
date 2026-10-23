@@ -266,6 +266,18 @@ class CacheIntegrationService {
     return storyCache.peek('user_glimpses', userId);
   }
 
+  async cacheExploreGlimpses(key: string, glimpses: any[]) {
+    await postCache.set('explore_glimpses', key, glimpses, CACHE_TTL.FEED_POSTS);
+  }
+
+  async getCachedExploreGlimpses(key: string) {
+    return await postCache.get('explore_glimpses', key, { allowStale: true });
+  }
+
+  peekCachedExploreGlimpses(key: string) {
+    return postCache.peek('explore_glimpses', key);
+  }
+
   async invalidateStory(storyId: string, authorId?: string) {
     await storyCache.delete('stories', storyId);
     if (authorId) {

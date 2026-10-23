@@ -58,7 +58,7 @@ export interface OverlayTextElement {
 
 export interface OverlaySticker {
     id: string;
-    type: 'emoji' | 'label' | 'gif' | 'location' | 'mention' | 'hashtag' | 'poll' | 'slider' | 'question' | 'quiz' | 'countdown' | 'time' | 'reshare' | 'music' | 'rating';
+    type: 'emoji' | 'label' | 'gif' | 'location' | 'mention' | 'hashtag' | 'poll' | 'slider' | 'question' | 'quiz' | 'countdown' | 'time' | 'reshare' | 'rating';
     kind?: string;
     content: any;
     x?: number;
@@ -464,12 +464,11 @@ export function StoryOverlayRenderer({
         else if (type === 'question') { defaultW = 0.85; defaultH = 0.18; }
         else if (type === 'slider' || type === 'rating') { defaultW = 0.85; defaultH = 0.16; }
         else if (type === 'mention' || type === 'hashtag' || type === 'time') { defaultW = 0.42; defaultH = 0.09; }
-        else if (type === 'music') { defaultW = 0.58; defaultH = 0.11; }
 
         const explicitAnchor = String((sticker as any)?.transform?.anchor || (sticker as any)?.anchor || '').toLowerCase();
         const hasExplicitSize = (typeof (sticker as any)?.transform?.w === 'number') || (typeof (sticker as any)?.transform?.h === 'number')
             || (typeof (sticker as any)?.size?.w === 'number') || (typeof (sticker as any)?.size?.h === 'number');
-        const isWidgetType = ['poll', 'slider', 'question', 'quiz', 'mention', 'hashtag', 'time', 'rating', 'music'].includes(type);
+        const isWidgetType = ['poll', 'slider', 'question', 'quiz', 'mention', 'hashtag', 'time', 'rating'].includes(type);
         // Backward compatibility: older exports stored widget x/y as top-left without size.
         const inferredTopLeft = !explicitAnchor && isWidgetType && !hasExplicitSize;
         const anchorMode: 'center' | 'topLeft' = (explicitAnchor.includes('top') || inferredTopLeft) ? 'topLeft' : 'center';

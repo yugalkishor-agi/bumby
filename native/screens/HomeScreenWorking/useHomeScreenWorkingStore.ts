@@ -20,10 +20,6 @@ interface HomeScreenWorkingState {
   setUnreadNotifications: (val: any | ((prev: any) => any)) => void;
   unreadMessages: any;
   setUnreadMessages: (val: any | ((prev: any) => any)) => void;
-  activeMusicPostId: string | null;
-  setActiveMusicPostId: (val: string | null | ((prev: string | null) => string | null)) => void;
-  mutedMusicPostIds: Record<string, boolean>;
-  setMutedMusicPostIds: (val: Record<string, boolean> | ((prev: Record<string, boolean>) => Record<string, boolean>)) => void;
   followingIds: string[];
   setFollowingIds: (val: string[] | ((prev: string[]) => string[])) => void;
   lastDoc: any;
@@ -57,10 +53,6 @@ export const useHomeScreenWorkingStore = create<HomeScreenWorkingState>((set) =>
   setUnreadNotifications: (val) => set((state) => ({ unreadNotifications: typeof val === 'function' ? (val as any)(state.unreadNotifications) : val })),
   unreadMessages: 0,
   setUnreadMessages: (val) => set((state) => ({ unreadMessages: typeof val === 'function' ? (val as any)(state.unreadMessages) : val })),
-  activeMusicPostId: null,
-  setActiveMusicPostId: (val) => set((state) => ({ activeMusicPostId: typeof val === 'function' ? (val as any)(state.activeMusicPostId) : val })),
-  mutedMusicPostIds: {},
-  setMutedMusicPostIds: (val) => set((state) => ({ mutedMusicPostIds: typeof val === 'function' ? (val as any)(state.mutedMusicPostIds) : val })),
   followingIds: [],
   setFollowingIds: (val) => set((state) => ({ followingIds: typeof val === 'function' ? (val as any)(state.followingIds) : val })),
   lastDoc: null,

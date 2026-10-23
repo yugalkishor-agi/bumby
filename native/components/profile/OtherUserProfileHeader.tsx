@@ -1,21 +1,19 @@
-import { InlineLoadingSkeleton, ButtonLoadingSkeleton } from '../ui/LoadingSkeleton';
-import React, { useState } from 'react';
+import { InlineLoadingSkeleton } from '../ui/LoadingSkeleton';
+import React from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
-  Dimensions,
-  ImageBackground} from 'react-native';
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Avatar } from '../ui/Avatar';
 import { VerifiedBadge } from '../ui/VerifiedBadge';
+import { ProfileBio, getProfilePostCount } from './ProfileBio';
+import { ProfileWebsiteLink } from './ProfileWebsiteLink';
 import { colors, spacing, typography, borderRadius } from '../../styles/theme';
-import { Image } from 'expo-image';
-
-const { width } = Dimensions.get('window');
 
 interface OtherUserProfileHeaderProps {
   profileUser: any;
@@ -56,11 +54,8 @@ export function OtherUserProfileHeader({
   displayUserId,
   onOpenAboutAccount,
 }: OtherUserProfileHeaderProps) {
-  const [isBioExpanded, setIsBioExpanded] = useState(false);
-  const [canToggleBio, setCanToggleBio] = useState(false);
-  const totalPosts = userPosts.length + userGlimpses.length;
-  const bioWordCount = typeof profileUser?.bio === 'string' ? profileUser.bio.trim().split(/\s+/).filter(Boolean).length : 0;
-  const shouldShowBioToggle = canToggleBio || bioWordCount > 14;
+  const totalPosts = getProfilePostCount(profileUser, userPosts.length, userGlimpses.length);
+  const isVerified = !!(profileUser?.verified || profileUser?.isVerified);
   
   return (
     <View style={styles.container}>
@@ -68,8 +63,8 @@ export function OtherUserProfileHeader({
       <View style={styles.coverSection}>
         <LinearGradient
           colors={[
-            profileUser.isVerified ? '#667eea' : '#764ba2',
-            profileUser.isVerified ? '#764ba2' : '#667eea',
+            isVerified ? '#667eea' : '#764ba2',
+            isVerified ? '#764ba2' : '#667eea',
             '#f093fb'
           ]}
           start={{ x: 0, y: 0 }}
@@ -129,41 +124,14 @@ export function OtherUserProfileHeader({
 
         <TouchableOpacity style={styles.usernameRow} activeOpacity={0.75} onPress={onOpenAboutAccount} disabled={!onOpenAboutAccount}>
           <Text style={styles.username}>@{profileUser.username}</Text>
-          {profileUser.isVerified ? (
-            <VerifiedBadge size={20} style={styles.verifiedBadge} interactive />
+          {isVerified ? (
+            <VerifiedBadge size={20} style={styles.verifiedBadge} />
           ) : null}
         </TouchableOpacity>
         
-        {profileUser.bio ? (
-          <View style={styles.bioBlock}>
-            <Text
-              style={styles.bio}
-              numberOfLines={isBioExpanded ? undefined : 3}
-              onTextLayout={(event) => {
-                if (!canToggleBio && event.nativeEvent.lines.length > 3) {
-                  setCanToggleBio(true);
-                }
-              }}
-            >
-              {profileUser.bio}
-            </Text>
-            {shouldShowBioToggle ? (
-              <TouchableOpacity
-                activeOpacity={0.7}
-                onPress={() => setIsBioExpanded((current) => !current)}
-              >
-                <Text style={styles.bioToggle}>{isBioExpanded ? 'less' : 'more'}</Text>
-              </TouchableOpacity>
-            ) : null}
-          </View>
-        ) : null}
+        <ProfileBio bio={profileUser.bio} />
         
-        {profileUser.website && (
-          <TouchableOpacity style={styles.websiteContainer}>
-            <Ionicons name="link" size={16} color={colors.accent.primary} />
-            <Text style={styles.website}>{profileUser.website}</Text>
-          </TouchableOpacity>
-        )}
+        <ProfileWebsiteLink website={profileUser.website} variant="plain" />
 
         {/* Mutual Followers with Enhanced Design */}
         {mutualFollowers.length > 0 && (
@@ -402,32 +370,6 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.base,
     color: colors.text.secondary,
     flexShrink: 1,
-  },
-  bio: {
-    fontSize: typography.fontSize.base,
-    color: colors.text.primary,
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-  bioBlock: {
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
-  bioToggle: {
-    marginTop: spacing.xs,
-    fontSize: typography.fontSize.sm,
-    color: '#94A3B8',
-    fontWeight: typography.fontWeight.medium as any,
-  },
-  websiteContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
-  website: {
-    fontSize: typography.fontSize.base,
-    color: colors.accent.primary,
-    marginLeft: spacing.xs,
   },
   mutualFollowersSection: {
     flexDirection: 'row',

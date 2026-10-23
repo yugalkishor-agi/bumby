@@ -87,7 +87,7 @@ const PrivacyPolicyScreenComponent = createStaticContentScreen({
 
       <Text style={styles.section}>8. Contact Us</Text>
       <Text style={styles.paragraph}>
-        For privacy concerns, contact us at privacy@iris.app
+        For privacy concerns, contact us at privacy@bumby.app
       </Text>
     </View>
   ),

@@ -14,13 +14,13 @@ export default createStaticContentScreen({
   title: 'About',
   content: (
     <View>
-      <Text style={styles.heading}>Iris</Text>
+      <Text style={styles.heading}>Bumby</Text>
       <Text style={styles.version}>Version 1.0.0</Text>
       <Text style={styles.tagline}>Share your moments, connect with friends</Text>
       
-      <Text style={styles.section}>About Iris</Text>
+      <Text style={styles.section}>About Bumby</Text>
       <Text style={styles.paragraph}>
-        Iris is a modern social media platform built for authentic connections and creative expression. 
+        Bumby is a modern social media platform built for authentic connections and creative expression. 
         Share photos, videos, and stories with your friends and discover new content from around the world.
       </Text>
 
@@ -34,8 +34,8 @@ export default createStaticContentScreen({
 
       <Text style={styles.section}>Developer</Text>
       <Text style={styles.paragraph}>
-        Made with ❤️ by the Iris Team{'\n'}
-        © 2024 Iris. All rights reserved.
+        Made with ❤️ by the Bumby Team{'\n'}
+        © 2024 Bumby. All rights reserved.
       </Text>
     </View>
   ),

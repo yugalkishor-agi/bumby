@@ -68,7 +68,7 @@ export default function SharePostScreen() {
       ? 'video'
       : 'image';
 
-  const contentUrl = `https://iris.app/${contentType === 'post' ? 'post' : contentType === 'glimpse' ? 'glimpse' : 'story'}/${contentData.id}`;
+  const contentUrl = `https://bumby.app/${contentType === 'post' ? 'post' : contentType === 'glimpse' ? 'glimpse' : 'story'}/${contentData.id}`;
 
   useEffect(() => {
     Animated.spring(sheetTranslateY, {
@@ -213,7 +213,7 @@ export default function SharePostScreen() {
   const buildExternalPayload = () => {
     const previewText = (contentData.caption || '').trim();
     const messageParts = [
-      `Check this ${contentType} on Iris by ${contentData.authorUsername || 'creator'}`,
+      `Check this ${contentType} on Bumby by ${contentData.authorUsername || 'creator'}`,
       previewText,
       contentUrl,
     ].filter(Boolean);

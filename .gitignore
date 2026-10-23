@@ -104,3 +104,10 @@ docs
 .builder
 .agents
 .agents/rules
+
+# Local backup snapshots
+native/screens/*.bak.tsx
+
+# Never commit service-account keys or duplicate configs
+*firebase-adminsdk*.json
+google-services (*).json

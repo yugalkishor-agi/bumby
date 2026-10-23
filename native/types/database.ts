@@ -124,15 +124,6 @@ export interface Post {
   mediaURLs: string[];
   mediaType: 'image' | 'video';
   thumbnailURL?: string;
-  backgroundMusic?: {
-    trackId?: string;
-    trackTitle: string;
-    artistName: string;
-    coverArtURL?: string;
-    streamURL?: string;
-    clipStart?: number;
-    clipEnd?: number;
-  };
   aspectRatio: number;
   location?: PostLocation;
   tags: string[];
@@ -299,16 +290,6 @@ export interface Story {
   thumbnailURL?: string;
   coverImageURL?: string; // Cover image for glimpses (both images and videos)
   textOverlay?: TextOverlay;
-  backgroundMusic?: {
-    trackId: string;
-    trackTitle: string;
-    artistName: string;
-    coverArtURL?: string;
-    clipStart: number;
-    clipEnd: number;
-    customAudio?: boolean;
-    customAudioUrl?: string;
-  };
   audience: 'public' | 'followers' | 'closeFriends';
   allowReplies: boolean;
   allowSharing: boolean;
@@ -397,14 +378,6 @@ export interface Glimpse {
   allowReplies?: boolean;
   allowSharing?: boolean;
   settings?: { allowComments?: boolean; hideLikes?: boolean };
-  backgroundMusic?: {
-    trackTitle: string;
-    artistName: string;
-    coverArtURL?: string;
-    streamURL?: string;
-    clipStart?: number;
-    clipEnd?: number;
-  };
   stats: {
     likesCount: number;
     commentsCount: number;
@@ -1179,15 +1152,6 @@ export interface CreatePostData {
   mediaType: 'image' | 'video';
   postType: 'image' | 'video' | 'carousel' | 'text';
   thumbnailURL?: string;
-  backgroundMusic?: {
-    trackId?: string;
-    trackTitle: string;
-    artistName: string;
-    coverArtURL?: string;
-    streamURL?: string;
-    clipStart?: number;
-    clipEnd?: number;
-  };
   aspectRatio: number;
   location?: string;
   tags?: string[];

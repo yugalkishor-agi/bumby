@@ -6,6 +6,7 @@ import { VerifiedBadge } from '../components/ui/VerifiedBadge';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../contexts/AuthContext';
 import { userService } from '../services/user.service';
+import { messageService } from '../services/message.service';
 import { suggestionService, type SuggestedUser } from '../services/suggestion.service';
 import { colors, spacing, typography, borderRadius } from '../styles/theme';
 import { ScreenSkeleton, InlineLoadingSkeleton, ButtonLoadingSkeleton } from '../components/ui/LoadingSkeleton';
@@ -227,7 +228,10 @@ export default function SuggestionsScreenEnhanced() {
 
             <TouchableOpacity
               style={styles.messageButton}
-              onPress={() => (navigation as any).navigate('Chat', { userId: suggestion.userId })}
+              onPress={() => {
+                const conversationId = user ? messageService.getDirectConversationId(user.userId, suggestion.userId) : undefined;
+                (navigation as any).navigate('Chat', { userId: suggestion.userId, ...(conversationId ? { conversationId } : {}) });
+              }}
               activeOpacity={0.8}
             >
               <Ionicons name="chatbubble" size={16} color={colors.accent.primary} />

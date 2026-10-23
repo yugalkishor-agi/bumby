@@ -27,6 +27,7 @@ import { authService } from '../services/auth.service';
 import { userService } from '../services/user.service';
 import { multiAccountService, biometricPreferenceKey, isMultiAccountError } from '../services/multiAccount.service';
 import type { User } from '../types/database';
+import { zegoCallService } from '../services/zegoCall.service';
 
 interface SavedAccount {
   userId: string;
@@ -199,6 +200,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             // Save account for multi-account switching
             await saveCurrentAccount(normalizedUser);
 
+            // Initialize Zego calling
+            try {
+              if (Platform.OS === 'android' || Platform.OS === 'ios') {
+                await zegoCallService.initialize(normalizedUser);
+              }
+            } catch (e) {
+              console.warn('[AuthContext] Failed to initialize Zego call service:', e);
+            }
+
             // Start heartbeat for online status
             startHeartbeat(normalizedUser.userId);
 
@@ -217,6 +227,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           console.log('Firebase user is null, setting state to null');
           setUser(null);
           stopHeartbeat();
+          try {
+            zegoCallService.uninitialize();
+          } catch {}
         }
       } catch (error: any) {
         console.error('Auth state change error caught:', error);
@@ -284,6 +297,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signOut = async () => {
     setLoading(true);
     try {
+      try {
+        await zegoCallService.uninitialize();
+      } catch {}
       await authService.signOut();
       setUser(null);
       stopHeartbeat();

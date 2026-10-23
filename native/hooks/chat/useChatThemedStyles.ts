@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import type { StyleProp, ViewStyle, TextStyle, ImageStyle } from 'react-native';
+import { getChatAccentForeground, getChatAccentForegroundMuted } from '../../constants/chat';
 
 type NamedStyles = Record<string, any>;
 
@@ -22,7 +23,13 @@ export function useChatThemedStyles<T extends NamedStyles>({
   pollLocationMaxWidth,
   mediaBubbleWidth,
 }: Params<T>) {
-  return useMemo(() => ({
+  return useMemo(() => {
+    // The outgoing bubble is a solid accent fill, so its text needs an ink that
+    // actually contrasts with that fill instead of the shared near-white one.
+    const accentForeground = getChatAccentForeground(themeAccent);
+    const accentForegroundMuted = getChatAccentForegroundMuted(themeAccent);
+
+    return ({
     ...styles,
     accentColor: themeAccent,
     headerBlur: { ...styles.headerBlur, borderBottomColor: `${themeAccent}20`, backgroundColor: 'rgba(4, 10, 24, 0.24)' },
@@ -44,6 +51,11 @@ export function useChatThemedStyles<T extends NamedStyles>({
     messageBubbleMeCard: { ...styles.messageBubbleMeCard, borderColor: `${themeAccent}66`, backgroundColor: `${themeAccent}1f` },
     messageBubbleOther: { ...styles.messageBubbleOther, backgroundColor: 'rgba(16, 24, 40, 0.82)', borderColor: 'rgba(148, 163, 184, 0.2)' },
     messageBubbleOtherCard: { ...styles.messageBubbleOtherCard, borderColor: 'rgba(148, 163, 184, 0.26)', backgroundColor: 'rgba(15, 23, 42, 0.68)' },
+    messageTextMe: { ...styles.messageTextMe, color: accentForeground },
+    messageTextMeDeleted: { ...styles.messageTextDeleted, color: accentForegroundMuted, fontStyle: 'italic' },
+    messageTextMeMention: { color: accentForeground, fontWeight: '800' },
+    messageStatusIconMe: { color: accentForegroundMuted },
+    editedLabel: { ...styles.editedLabel, color: accentForegroundMuted },
     replyPreview: { ...styles.replyPreview, borderLeftColor: `${themeAccent}cc`, borderColor: 'transparent', backgroundColor: 'transparent' },
     replyContainer: { ...styles.replyContainer, borderColor: `${themeAccent}24`, backgroundColor: 'rgba(6, 12, 24, 0.84)' },
     replyLabel: { ...styles.replyLabel, color: themeAccent },
@@ -76,7 +88,8 @@ export function useChatThemedStyles<T extends NamedStyles>({
     pollBubbleWide: { ...styles.pollBubbleWide, width: pollLocationWidth, maxWidth: pollLocationMaxWidth, minWidth: 0 },
     messageImage: { ...styles.messageImage, width: mediaBubbleWidth, height: Math.round(mediaBubbleWidth * 1.08) },
     messageVideo: { ...styles.messageVideo, width: mediaBubbleWidth, height: Math.round(mediaBubbleWidth * 1.16) },
-  }), [
+    });
+  }, [
     isCompactScreen,
     mediaBubbleWidth,
     messageMaxWidthPx,

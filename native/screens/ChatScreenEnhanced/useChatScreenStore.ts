@@ -217,6 +217,7 @@ export const useChatScreenStore = create<ChatScreenState>((set) => ({
   setHasInitialScrolled: (val) => set((state) => ({ hasInitialScrolled: typeof val === 'function' ? (val as any)(state.hasInitialScrolled) : val })),
   resetForConversation: () =>
     set({
+      conversationId: null,
       messageText: '',
       sending: false,
       otherUser: null,

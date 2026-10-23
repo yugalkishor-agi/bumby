@@ -180,6 +180,14 @@ const styles = StyleSheet.create({
     width: '100%',
     alignSelf: 'center',
   },
+  // The message list lives inside a wrapper. Without a definite height the
+  // wrapper collapses to the list's intrinsic size (0/1px) and FlashList ends
+  // up with an unusable layout, so no bubbles are rendered at all.
+  messageListFrame: {
+    flex: 1,
+    width: '100%',
+    alignSelf: 'center',
+  },
   pinnedBannerFrame: {
     alignSelf: 'center',
     marginTop: Platform.OS === 'ios' ? 78 : 68,

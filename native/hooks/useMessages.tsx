@@ -74,7 +74,10 @@ const messageVersionKey = (message: Message | any): string => {
   const editedAt = toMillis(message?.editedAt) || 0;
   const sortMs = getMessageSortMs(message);
   const readBy = readBySignature(message?.readBy);
-  return `${id}:${status}:${isDeleted}:${text.length}:${mediaURL}:${mediaType}:${updatedAt}:${editedAt}:${sortMs}:${readBy}`;
+  // Include whether createdAt is a server Firestore Timestamp vs a local Date
+  // so optimistic→confirmed transitions are never treated as equivalent.
+  const createdAtType = message?.createdAt?.nanoseconds != null ? 'ts' : 'local';
+  return `${id}:${status}:${isDeleted}:${text.length}:${mediaURL}:${mediaType}:${updatedAt}:${editedAt}:${sortMs}:${readBy}:${createdAtType}`;
 };
 
 const areMessageListsEquivalent = (prev: Message[], next: Message[]): boolean => {
@@ -152,7 +155,7 @@ export const useConversations = () => {
 };
 
 export const useMessages = (
-  conversationId: string,
+  conversationId: string | null | undefined,
   options?: { initialLimit?: number; pageSize?: number }
 ) => {
   const { user } = useAuth();
@@ -161,7 +164,11 @@ export const useMessages = (
     conversationId && currentUserId
       ? inMemoryMessageCache.get(buildMemoryCacheKey(conversationId, currentUserId)) || []
       : [];
-  const memorySeed = memorySeedRaw.slice(-MEMORY_SEED_LIMIT);
+  const serviceSeedRaw =
+    conversationId && currentUserId
+      ? messageCacheService.peek<Message>(conversationId, currentUserId)
+      : [];
+  const memorySeed = mergeMessages(memorySeedRaw, serviceSeedRaw).slice(-MEMORY_SEED_LIMIT);
   const [messages, setMessages] = useState<Message[]>(memorySeed);
   const [loading, setLoading] = useState(memorySeed.length === 0);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -328,20 +335,22 @@ export const useMessages = (
     (async () => {
       try {
         const cachedResult = await messageCacheService.getWithMeta<Message>(conversationId, currentUserId);
-        const cachedVisible = applyUserVisibility(cachedResult.items).slice(-hydrateWindowSize);
-        const cached = await hydrateMessagesIfNeeded(cachedVisible);
-        if (cached.length > 0 && !cancelled) {
-          inMemoryMessageCache.set(memoryKey, cached);
-          setMessages((prev) => {
-            const next = prev.length > 0 ? mergeMessages(prev, cached) : cached;
-            if (areMessageListsEquivalent(prev, next)) return prev;
-            inMemoryMessageCache.set(memoryKey, next.slice(-MEMORY_STORE_LIMIT));
-            return next;
-          });
-          setLoading(false);
+        if (cachedResult.items.length > 0) {
+          const cachedVisible = applyUserVisibility(cachedResult.items).slice(-hydrateWindowSize);
+          const cached = await hydrateMessagesIfNeeded(cachedVisible);
+          if (cached.length > 0 && !cancelled) {
+            inMemoryMessageCache.set(memoryKey, cached);
+            setMessages((prev) => {
+              const next = prev.length > 0 ? mergeMessages(prev, cached) : cached;
+              if (areMessageListsEquivalent(prev, next)) return prev;
+              inMemoryMessageCache.set(memoryKey, next.slice(-MEMORY_STORE_LIMIT));
+              return next;
+            });
+            setLoading(false);
+          }
         }
 
-        if (cachedResult.stale || cached.length === 0) {
+        if (cachedResult.stale || cachedResult.items.length === 0) {
           const seededRemote = await messageService.getConversationMessages(conversationId, initialLimit);
           if (!cancelled && seededRemote.length > 0) {
             const filteredRemote = await hydrateMessagesIfNeeded(applyUserVisibility(seededRemote).slice(-hydrateWindowSize));
@@ -360,10 +369,15 @@ export const useMessages = (
     })();
 
     const messagesRef = collection(db, "conversations", conversationId, "messages");
-    const latestQuery = query(messagesRef, orderBy("createdAt", "desc"), limit(initialLimit));
+    // Use a generous limit so newly sent messages (whose serverTimestamp hasn't
+    // resolved yet) are never pushed outside the window. The initialLimit is for
+    // the initial load; the live listener needs extra headroom.
+    const liveLimit = Math.max(initialLimit + 40, 80);
+    const latestQuery = query(messagesRef, orderBy("createdAt", "desc"), limit(liveLimit));
 
     const messagesUnsubscribe = onSnapshot(
       latestQuery,
+      { includeMetadataChanges: true },
       (snapshot) => {
         if (snapshot.metadata?.fromCache) {
           if (hasServerSyncRef.current) {
@@ -375,7 +389,7 @@ export const useMessages = (
         }
         const docs = snapshot.docs;
         const latest = docs.map((docItem) => {
-          const data = docItem.data() as Message;
+          const data = docItem.data({ serverTimestamps: 'estimate' }) as Message;
           return {
             ...data,
             messageId: data.messageId || docItem.id,
@@ -383,6 +397,11 @@ export const useMessages = (
           } as Message;
         });
         const filtered = applyUserVisibility(latest).reverse();
+        console.log(`[MSG_DEBUG] snapshot docs=${docs.length} filtered=${filtered.length} cutoff=${deletionCutoffRef.current} liveHydrated=${liveHydratedRef.current}`);
+        if (filtered.length < docs.length) {
+          const dropped = latest.filter(m => !filtered.find(f => f.messageId === m.messageId));
+          console.log(`[MSG_DEBUG] dropped messages:`, dropped.map(m => ({ id: m.messageId, createdAt: toMillis(m.createdAt), deletedFor: (m as any).deletedFor })));
+        }
         markDeliveredIfNeeded(latest);
 
         if (!cursorRef.current && docs.length > 0) {
@@ -400,7 +419,11 @@ export const useMessages = (
               ? prev.filter((msg: any) => ['pending', 'pending_offline', 'failed'].includes(String(msg?.status || '')))
               : prev;
             const merged = firstLiveHydration ? mergeMessages(hydrated, pendingLocal) : mergeMessages(prev, hydrated);
-            if (areMessageListsEquivalent(prev, merged)) return prev;
+            console.log(`[MSG_DEBUG] setMessages prev=${prev.length} hydrated=${hydrated.length} merged=${merged.length} firstLive=${firstLiveHydration}`);
+            // Always return a new array reference on live updates so FlashList
+            // re-renders. The equivalence check was preventing render when an
+            // optimistic message transitioned to server-confirmed (same key).
+            if (firstLiveHydration && areMessageListsEquivalent(prev, merged)) return prev;
             inMemoryMessageCache.set(memoryKey, merged.slice(-MEMORY_STORE_LIMIT));
             return merged;
           });

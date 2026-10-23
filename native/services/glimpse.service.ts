@@ -25,7 +25,7 @@ import type { Story } from '../types/database';
 import { likeService, type LikeLookupItem } from './like.service';
 import { cacheIntegration } from './cacheIntegration.service';
 import { imageCacheService } from './imageCache.service';
-import { normalizeOverlayLayers } from '../utils/glimpse/glimpseEditorUtils';
+import { normalizeOverlayLayers } from '../utils/glimpseEditor';
 
 function extractTaggedUserIds(taggedUsers?: Array<{ userId?: string; username?: string }>) {
   const ids = (taggedUsers || [])
@@ -109,27 +109,6 @@ function sanitizeEditorMeta(meta?: {
   const overlayLayers = normalizeOverlayLayers(meta.overlayLayers);
   if (overlayLayers.length) clean.overlayLayers = overlayLayers;
 
-  return Object.keys(clean).length ? clean : null;
-}
-
-function sanitizeBackgroundMusic(backgroundMusic?: {
-  trackId?: string;
-  trackTitle?: string;
-  artistName?: string;
-  coverArtURL?: string;
-  streamURL?: string;
-  clipStart?: number;
-  clipEnd?: number;
-}) {
-  if (!backgroundMusic) return null;
-  const clean: any = {};
-  if (backgroundMusic.trackId) clean.trackId = backgroundMusic.trackId;
-  if (backgroundMusic.trackTitle) clean.trackTitle = backgroundMusic.trackTitle;
-  if (backgroundMusic.artistName) clean.artistName = backgroundMusic.artistName;
-  if (backgroundMusic.coverArtURL) clean.coverArtURL = backgroundMusic.coverArtURL;
-  if (backgroundMusic.streamURL) clean.streamURL = backgroundMusic.streamURL;
-  if (typeof backgroundMusic.clipStart === 'number') clean.clipStart = Math.max(0, Math.round(backgroundMusic.clipStart));
-  if (typeof backgroundMusic.clipEnd === 'number') clean.clipEnd = Math.max(0, Math.round(backgroundMusic.clipEnd));
   return Object.keys(clean).length ? clean : null;
 }
 
@@ -279,16 +258,6 @@ export class GlimpseService {
     tags?: string[],
     taggedUsers?: Array<{ userId: string; username: string }>,
     collaborators?: Array<{ userId: string; username: string }>,
-    backgroundMusic?: {
-      trackId: string;
-      trackTitle: string;
-      artistName: string;
-      coverArtURL?: string;
-      clipStart: number;
-      clipEnd: number;
-      customAudio?: boolean;
-      customAudioUrl?: string;
-    },
     coverImageBlob?: Blob,
     taggedPeople?: string[],
     settings?: {
@@ -380,7 +349,6 @@ export class GlimpseService {
       isGlimpse: true,
     };
 
-    if (backgroundMusic) glimpseData.backgroundMusic = backgroundMusic;
     if (coverImageURL) glimpseData.coverImageURL = coverImageURL;
 
     await setDoc(glimpseRef, glimpseData);
@@ -501,15 +469,6 @@ export class GlimpseService {
       hideLikes?: boolean;
       showCaptions?: boolean;
       audience?: 'public' | 'followers' | 'close_friends';
-      backgroundMusic?: {
-        trackId?: string;
-        trackTitle: string;
-        artistName: string;
-        coverArtURL?: string;
-        streamURL?: string;
-        clipStart?: number;
-        clipEnd?: number;
-      };
       mentions?: string[];
       tags?: string[];
       taggedUsers?: Array<{ userId: string; username: string }>;
@@ -527,7 +486,6 @@ export class GlimpseService {
     const glimpseRef = doc(collection(db, 'glimpses'));
     const glimpseId = glimpseRef.id;
     const sanitizedEditorMeta = sanitizeEditorMeta(options?.editorMeta);
-    const sanitizedBackgroundMusic = sanitizeBackgroundMusic(options?.backgroundMusic);
     const sanitizedTaggedUsers = sanitizeTaggedUsers(options?.taggedUsers);
 
     const normalizedMentions = Array.from(
@@ -599,7 +557,6 @@ export class GlimpseService {
         sharesCount: 0,
       },
       caption: caption || '',
-      ...(sanitizedBackgroundMusic ? { backgroundMusic: sanitizedBackgroundMusic } : {}),
       ...(sanitizedEditorMeta ? { editorMeta: sanitizedEditorMeta } : {}),
       trimStart: typeof sanitizedEditorMeta?.trimStart === 'number' ? Math.max(0, Math.round(sanitizedEditorMeta.trimStart)) : null,
       trimEnd: typeof sanitizedEditorMeta?.trimEnd === 'number' ? Math.max(0, Math.round(sanitizedEditorMeta.trimEnd)) : null,
@@ -827,6 +784,32 @@ export class GlimpseService {
   }
   async getGlimpse(glimpseId: string, viewerId?: string): Promise<Story | null> {
     if (!glimpseId || typeof glimpseId !== 'string' || glimpseId.trim() === '') return null;
+    const cacheKey = `glimpse:${glimpseId.trim()}:${viewerId || 'guest'}`;
+    try {
+      const cached = await cacheIntegration.getCachedData(cacheKey);
+      if (cached && typeof cached === 'object') {
+        return cached as Story;
+      }
+    } catch {}
+    try {
+      const peeked = cacheIntegration.peekCachedData(cacheKey);
+      if (peeked && typeof peeked === 'object') {
+        void (async () => {
+          try {
+            const fresh = await this.getGlimpse(glimpseId, viewerId);
+            if (fresh) {
+              void cacheIntegration.cacheData(cacheKey, fresh, 10 * 60 * 1000);
+              void imageCacheService.prefetchBatch(
+                [fresh.thumbnailURL, fresh.coverImageURL, fresh.mediaURL].filter((v): v is string => typeof v === 'string' && v.length > 0),
+                6
+              );
+            }
+          } catch {}
+        })();
+        return peeked as Story;
+      }
+    } catch {}
+
     try {
       const glimpseRef = doc(db, 'glimpses', glimpseId.trim());
       const snapshot = await getDoc(glimpseRef);
@@ -861,6 +844,14 @@ export class GlimpseService {
         const likedIds = await this.getUserLikedGlimpses(viewerId, [snapshot.id]);
         (glimpse as any).isLiked = likedIds.includes(snapshot.id);
       }
+
+      try {
+        await cacheIntegration.cacheData(cacheKey, glimpse, 10 * 60 * 1000);
+        void imageCacheService.prefetchBatch(
+          [(glimpse as any).thumbnailURL, (glimpse as any).coverImageURL, (glimpse as any).mediaURL].filter((v): v is string => typeof v === 'string' && v.length > 0),
+          6
+        );
+      } catch {}
       return glimpse;
     } catch (error) {
       console.error('Failed to fetch glimpse:', glimpseId, error);
@@ -944,7 +935,24 @@ export class GlimpseService {
     return this.hydrateLikedState(visibleGlimpses, currentUserId);
   }
 
-  async getExploreGlimpses(limitCount: number = 20, viewerId?: string): Promise<Story[]> {
+  async getExploreGlimpses(limitCount: number = 20, viewerId?: string, forceFresh = false): Promise<Story[]> {
+    const cacheKey = `explore:${viewerId || 'guest'}:${limitCount}`;
+    if (!forceFresh) {
+      const cached = await cacheIntegration.getCachedExploreGlimpses(cacheKey);
+      if (Array.isArray(cached) && cached.length > 0) {
+        void cacheIntegration.scheduleBackgroundRefresh('explore_glimpses:' + cacheKey, async () => {
+          await this.getExploreGlimpses(limitCount, viewerId, true);
+        }, 15000);
+        void imageCacheService.prefetchBatch(
+          (cached as any[])
+            .flatMap((item: any) => [item?.thumbnailURL, item?.coverImageURL, item?.mediaURL])
+            .filter((value): value is string => typeof value === 'string' && value.length > 0),
+          6
+        );
+        return cached as Story[];
+      }
+    }
+
     const glimpsesRef = collection(db, 'glimpses');
     const q = query(
       glimpsesRef,
@@ -982,16 +990,43 @@ export class GlimpseService {
       } as Story;
     });
 
+    let result = glimpses;
     if (viewerId && glimpses.length > 0) {
-      return this.hydrateLikedState(glimpses, viewerId);
+      result = await this.hydrateLikedState(glimpses, viewerId);
     }
-    return glimpses;
+    await cacheIntegration.cacheExploreGlimpses(cacheKey, result);
+    void imageCacheService.prefetchBatch(
+      (result as any[])
+        .flatMap((item: any) => [item?.thumbnailURL, item?.coverImageURL, item?.mediaURL])
+        .filter((value): value is string => typeof value === 'string' && value.length > 0),
+      6
+    );
+    return result;
   }
 
   async getAllGlimpses(limitCount: number = 20, lastDoc?: DocumentSnapshot, viewerId?: string): Promise<{
     glimpses: Story[];
     lastDoc: DocumentSnapshot | null;
   }> {
+    const cacheKey = `all_glimpses:${viewerId || 'guest'}:${limitCount}:${lastDoc ? (lastDoc as any)?.id || 'p' : 'first'}`;
+    if (!lastDoc) {
+      try {
+        const cached = await cacheIntegration.getCachedData(cacheKey);
+        if (cached && Array.isArray((cached as any)?.glimpses)) {
+          return cached as any;
+        }
+      } catch {}
+      try {
+        const peeked = cacheIntegration.peekCachedData(cacheKey);
+        if (peeked && Array.isArray((peeked as any)?.glimpses)) {
+          void this.getAllGlimpses(limitCount, undefined, viewerId).then((fresh) => {
+            try { void cacheIntegration.cacheData(cacheKey, fresh, 5 * 60 * 1000); } catch {}
+          });
+          return peeked as any;
+        }
+      } catch {}
+    }
+
     const glimpsesRef = collection(db, 'glimpses');
     let q = query(glimpsesRef, orderBy('createdAt', 'desc'), limit(limitCount));
     if (lastDoc) q = query(q, startAfter(lastDoc));
@@ -1043,7 +1078,17 @@ export class GlimpseService {
       isLiked: likedIdSet.has(String(glimpse?.glimpseId || glimpse?.storyId || '')),
     }));
 
-    return { glimpses: hydratedVisibleGlimpses, lastDoc: snapshot.docs[snapshot.docs.length - 1] || null };
+    const result = { glimpses: hydratedVisibleGlimpses, lastDoc: snapshot.docs[snapshot.docs.length - 1] || null };
+    if (!lastDoc) {
+      try {
+        await cacheIntegration.cacheData(cacheKey, result, 5 * 60 * 1000);
+        void imageCacheService.prefetchBatch(
+          hydratedVisibleGlimpses.flatMap((item: any) => [item?.thumbnailURL, item?.coverImageURL, item?.mediaURL]).filter((v): v is string => typeof v === 'string' && v.length > 0),
+          8
+        );
+      } catch {}
+    }
+    return result;
   }
 
   async getUserLikedGlimpses(userId: string, glimpseIds: string[]): Promise<string[]> {

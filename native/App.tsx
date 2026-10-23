@@ -26,6 +26,7 @@ import ErrorBoundary from './components/debug/ErrorBoundary';
 import { StoryProcessingBar } from './components/ui/StoryProcessingBar';
 import ThemedNavigationShell from './components/navigation/ThemedNavigationShell';
 import { LoadingSkeleton } from './components/ui/LoadingSkeleton';
+import AppLockGate from './components/security/AppLockGate';
 
 const getWelcomeScreen = () => require('./screens/WelcomeScreen').default;
 const getOnboardingScreen = () => require('./screens/OnboardingScreen').default;
@@ -94,31 +95,17 @@ const getPrivacySettingsScreen = () => require('./screens/PrivacySettingsScreen'
 const getNotificationSettingsScreen = () => require('./screens/NotificationSettingsScreen').default;
 const getAccountSettingsScreen = () => require('./screens/AccountSettingsScreen').default;
 const getSecuritySettingsScreen = () => require('./screens/SecuritySettingsScreen').default;
-const getAppearanceSettingsScreen = () => require('./screens/AppearanceSettingsScreen').default;
-const getLanguageSettingsScreen = () => require('./screens/LanguageSettingsScreen').default;
-const getDataUsageScreen = () => require('./screens/DataUsageScreen').default;
-const getAccessibilityScreen = () => require('./screens/AccessibilityScreen').default;
-const getSoundSettingsScreen = () => require('./screens/SoundSettingsScreen').default;
-const getAutoPlaySettingsScreen = () => require('./screens/AutoPlaySettingsScreen').default;
-const getCaptionsSettingsScreen = () => require('./screens/CaptionsSettingsScreen').default;
 const getTwoFactorAuthScreen = () => require('./screens/TwoFactorAuthScreen').default;
 const getChangePasswordScreen = () => require('./screens/ChangePasswordScreen').default;
 const getDeactivateAccountScreen = () => require('./screens/DeactivateAccountScreen').default;
 const getDeleteAccountScreen = () => require('./screens/DeleteAccountScreen').default;
 const getEmailPhoneScreen = () => require('./screens/EmailPhoneScreen').default;
-const getLoginActivityScreen = () => require('./screens/LoginActivityScreen').default;
-const getSavedLoginScreen = () => require('./screens/SavedLoginScreen').default;
-const getAppsWebsitesScreen = () => require('./screens/AppsWebsitesScreen').default;
 const getBackupCodesScreen = () => require('./screens/BackupCodesScreen').default;
-const getAccountActivityScreen = () => require('./screens/AccountActivityScreen').default;
 const getBlockedUsersScreen = () => require('./screens/BlockedUsersScreen').default;
 const getCloseFriendsScreen = () => require('./screens/CloseFriendsScreen').default;
 const getRestrictedAccountsScreen = () => require('./screens/RestrictedAccountsScreen').default;
 const getFollowRequestsScreen = () => require('./screens/FollowRequestsScreen').default;
-const getMessagePrivacyScreen = () => require('./screens/MessagePrivacyScreen').default;
-const getTagPrivacyScreen = () => require('./screens/TagPrivacyScreen').default;
 const getHideStoryScreen = () => require('./screens/HideStoryScreen').default;
-const getMentionSettingsScreen = () => require('./screens/MentionSettingsScreen').default;
 const getReportContentScreen = () => require('./screens/ReportContentScreen').default;
 const getReportProblemScreen = () => require('./screens/ReportProblemScreen').default;
 const getBlockConfirmScreen = () => require('./screens/BlockConfirmScreen').default;
@@ -140,10 +127,8 @@ const getAchievementsScreen = () => require('./screens/AchievementsScreen').defa
 const getLeaderboardScreen = () => require('./screens/LeaderboardScreen').default;
 const getInterestsScreen = () => require('./screens/InterestsScreen').default;
 const getThemeScreen = () => require('./screens/ThemeScreen').default;
-const getFontSizeScreen = () => require('./screens/FontSizeScreen').default;
 const getRequestVerificationScreen = () => require('./screens/RequestVerificationScreen').default;
 const getCacheManagementScreen = () => require('./screens/CacheManagementScreen').default;
-const getDownloadDataScreen = () => require('./screens/DownloadDataScreen').default;
 const getHelpCenterScreen = () => require('./screens/HelpCenterScreen').default;
 const getAboutScreen = () => require('./screens/AboutScreen').default;
 const getTermsScreen = () => require('./screens/TermsScreen').default;
@@ -151,6 +136,11 @@ const getPrivacyPolicyScreen = () => require('./screens/PrivacyPolicyScreen').de
 const getGuidelinesScreen = () => require('./screens/GuidelinesScreen').default;
 const getFAQScreen = () => require('./screens/FAQScreen').default;
 const getContactSupportScreen = () => require('./screens/ContactSupportScreen').default;
+
+import {
+  ZegoUIKitPrebuiltCallWaitingScreen,
+  ZegoUIKitPrebuiltCallInCallScreen,
+} from './components/call/zegoCallComponents';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -430,9 +420,9 @@ function AppNavigator() {
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#05070A' }}>
         <View style={{ alignItems: 'center' }}>
           <View style={{ width: 120, height: 120, borderRadius: 40, backgroundColor: 'rgba(77,208,225,0.08)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(77,208,225,0.18)' }}>
-            <Image source={require('../public/Iris-logo-splesh-screen.png')} style={{ width: 84, height: 84 }} contentFit="contain" />
+            <Image source={require('../assets/Images/bumbylogo.png')} style={{ width: 84, height: 84 }} contentFit="contain" />
           </View>
-          <Text style={{ color: '#F4FDFF', fontSize: 28, fontWeight: '700', marginTop: 18, letterSpacing: 0.5 }}>Iris</Text>
+          <Text style={{ color: '#F4FDFF', fontSize: 28, fontWeight: '700', marginTop: 18, letterSpacing: 0.5 }}>Bumby</Text>
           <Text style={{ color: 'rgba(244,253,255,0.58)', fontSize: 13, marginTop: 6 }}>Preparing your space</Text>
           <View style={{ width: 140, marginTop: 18 }}>
             <LoadingSkeleton height={10} borderRadius={999} />
@@ -455,6 +445,17 @@ function AppNavigator() {
       ) : (
         <>
           <Stack.Screen name="Main" component={MainTabs} />
+          {/* Zego Call Screens */}
+          <Stack.Screen
+            options={{ headerShown: false }}
+            name="ZegoUIKitPrebuiltCallWaitingScreen"
+            component={ZegoUIKitPrebuiltCallWaitingScreen}
+          />
+          <Stack.Screen
+            options={{ headerShown: false }}
+            name="ZegoUIKitPrebuiltCallInCallScreen"
+            component={ZegoUIKitPrebuiltCallInCallScreen}
+          />
           {/* Messaging */}
           <Stack.Screen name="Messages" getComponent={getMessagesScreenEnhanced} options={{ animation: 'none' }} />
           <Stack.Screen name="Chat" getComponent={getChatScreenEnhanced} options={{ animation: 'none' }} />
@@ -560,13 +561,6 @@ function AppNavigator() {
           <Stack.Screen name="NotificationSettings" getComponent={getNotificationSettingsScreen} />
           <Stack.Screen name="AccountSettings" getComponent={getAccountSettingsScreen} />
           <Stack.Screen name="SecuritySettings" getComponent={getSecuritySettingsScreen} />
-          <Stack.Screen name="AppearanceSettings" getComponent={getAppearanceSettingsScreen} />
-          <Stack.Screen name="LanguageSettings" getComponent={getLanguageSettingsScreen} />
-          <Stack.Screen name="DataUsage" getComponent={getDataUsageScreen} />
-          <Stack.Screen name="Accessibility" getComponent={getAccessibilityScreen} />
-          <Stack.Screen name="SoundSettings" getComponent={getSoundSettingsScreen} />
-          <Stack.Screen name="AutoPlaySettings" getComponent={getAutoPlaySettingsScreen} />
-          <Stack.Screen name="CaptionsSettings" getComponent={getCaptionsSettingsScreen} />
 
           {/* Account & Security */}
           <Stack.Screen name="TwoFactorAuth" getComponent={getTwoFactorAuthScreen} />
@@ -574,10 +568,6 @@ function AppNavigator() {
           <Stack.Screen name="DeactivateAccount" getComponent={getDeactivateAccountScreen} />
           <Stack.Screen name="DeleteAccount" getComponent={getDeleteAccountScreen} />
           <Stack.Screen name="EmailPhone" getComponent={getEmailPhoneScreen} />
-          <Stack.Screen name="LoginActivity" getComponent={getLoginActivityScreen} />
-          <Stack.Screen name="AccountActivity" getComponent={getAccountActivityScreen} />
-          <Stack.Screen name="SavedLogin" getComponent={getSavedLoginScreen} />
-          <Stack.Screen name="AppsWebsites" getComponent={getAppsWebsitesScreen} />
           <Stack.Screen name="BackupCodes" getComponent={getBackupCodesScreen} />
 
           {/* Privacy Controls */}
@@ -585,10 +575,7 @@ function AppNavigator() {
           <Stack.Screen name="CloseFriends" getComponent={getCloseFriendsScreen} />
           <Stack.Screen name="RestrictedAccounts" getComponent={getRestrictedAccountsScreen} />
           <Stack.Screen name="FollowRequests" getComponent={getFollowRequestsScreen} />
-          <Stack.Screen name="MessagePrivacy" getComponent={getMessagePrivacyScreen} />
-          <Stack.Screen name="TagPrivacy" getComponent={getTagPrivacyScreen} />
           <Stack.Screen name="HideStory" getComponent={getHideStoryScreen} />
-          <Stack.Screen name="MentionSettings" getComponent={getMentionSettingsScreen} />
 
           {/* Moderation */}
           <Stack.Screen name="ReportContent" getComponent={getReportContentScreen} />
@@ -620,10 +607,8 @@ function AppNavigator() {
           {/* Preferences */}
           <Stack.Screen name="Interests" getComponent={getInterestsScreen} />
           <Stack.Screen name="Theme" getComponent={getThemeScreen} />
-          <Stack.Screen name="FontSize" getComponent={getFontSizeScreen} />
           <Stack.Screen name="RequestVerification" getComponent={getRequestVerificationScreen} />
           <Stack.Screen name="CacheManagement" getComponent={getCacheManagementScreen} />
-          <Stack.Screen name="DownloadData" getComponent={getDownloadDataScreen} />
 
           {/* Support & Info */}
           <Stack.Screen name="HelpCenter" getComponent={getHelpCenterScreen} />
@@ -651,7 +636,9 @@ function App() {
                   <ThemedNavigationShell>
                     <ErrorBoundary>
                       <StoryProcessingBar />
-                      <AppNavigator />
+                      <AppLockGate>
+                        <AppNavigator />
+                      </AppLockGate>
                     </ErrorBoundary>
                   </ThemedNavigationShell>
                 </ToastProvider>

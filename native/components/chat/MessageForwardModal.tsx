@@ -312,8 +312,7 @@ export function MessageForwardModal({
         {/* Contacts List */}
         {loading ? (
           <View style={styles.loadingContainer}>
-            <ScreenSkeleton variant="list" rows={6} />
-            <Text style={styles.loadingText}>Loading contacts...</Text>
+            <ScreenSkeleton variant="people" rows={7} showHeader={false} />
           </View>
         ) : (
           <FlashList estimatedItemSize={100}
@@ -416,9 +415,6 @@ const styles = StyleSheet.create({
   },
   loadingContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: spacing.md,
   },
   loadingText: {
     fontSize: typography.fontSize.base,

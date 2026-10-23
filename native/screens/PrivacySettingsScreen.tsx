@@ -11,9 +11,82 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
-import { spacing, typography, useColors } from '../styles/theme';
+import { spacing, typography, useColors, ThemeColors } from '../styles/theme';
 import { useAuth } from '../contexts/AuthContext';
 import { settingsService } from '../services/settings.service';
+
+interface PrivacyState {
+  isPrivate: boolean;
+  showActivityStatus: boolean;
+  showReadReceipts: boolean;
+  hideLastSeen: boolean;
+  hideOnlineStatus: boolean;
+}
+
+const DEFAULT_PRIVACY: PrivacyState = {
+  isPrivate: false,
+  showActivityStatus: true,
+  showReadReceipts: true,
+  hideLastSeen: false,
+  hideOnlineStatus: false,
+};
+
+interface ToggleRowProps {
+  c: ThemeColors;
+  styles: ReturnType<typeof createStyles>;
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  value: boolean;
+  saving: boolean;
+  onChange: (v: boolean) => void;
+}
+
+function ToggleRow({ c, styles, icon, title, value, saving, onChange }: ToggleRowProps) {
+  return (
+    <View style={[styles.row, saving && styles.rowDisabled]}>
+      <View style={styles.left}>
+        <View style={styles.iconWrap}>
+          <Ionicons name={icon} size={18} color={c.accent.primary} />
+        </View>
+        <Text style={styles.title}>{title}</Text>
+      </View>
+      {saving ? (
+        <View style={styles.statusBadge}>
+          <Text style={styles.statusBadgeText}>Saving</Text>
+        </View>
+      ) : (
+        <Switch
+          value={!!value}
+          onValueChange={onChange}
+          trackColor={{ false: c.border.light, true: `${c.accent.primary}40` }}
+          thumbColor={value ? '#FFFFFF' : c.text.secondary}
+        />
+      )}
+    </View>
+  );
+}
+
+interface NavRowProps {
+  c: ThemeColors;
+  styles: ReturnType<typeof createStyles>;
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  onPress: () => void;
+}
+
+function NavRow({ c, styles, icon, title, onPress }: NavRowProps) {
+  return (
+    <TouchableOpacity style={styles.row} onPress={onPress} activeOpacity={0.78}>
+      <View style={styles.left}>
+        <View style={styles.iconWrap}>
+          <Ionicons name={icon} size={18} color={c.accent.primary} />
+        </View>
+        <Text style={styles.title}>{title}</Text>
+      </View>
+      <Ionicons name="chevron-forward" size={18} color={c.text.muted} />
+    </TouchableOpacity>
+  );
+}
 
 export default function PrivacySettingsScreen() {
   const navigation = useNavigation();
@@ -21,13 +94,9 @@ export default function PrivacySettingsScreen() {
   const c = useColors();
   const styles = useMemo(() => createStyles(c), [c]);
   const intro = useRef(new Animated.Value(0)).current;
-  const [privacy, setPrivacy] = useState({
-    isPrivate: false,
-    showActivityStatus: true,
-    showReadReceipts: true,
-    hideLastSeen: false,
-    hideOnlineStatus: false,
-  });
+  const userId = user?.userId ?? null;
+
+  const [privacy, setPrivacy] = useState<PrivacyState>(DEFAULT_PRIVACY);
   const [savingKeys, setSavingKeys] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
@@ -40,10 +109,13 @@ export default function PrivacySettingsScreen() {
   }, [intro]);
 
   useEffect(() => {
+    if (!userId) return;
+    let cancelled = false;
+
     const load = async () => {
-      if (!user) return;
       try {
-        const p = await settingsService.getPrivacySettings(user.userId);
+        const p = await settingsService.getPrivacySettings(userId);
+        if (cancelled) return;
         setPrivacy({
           isPrivate: !!p.isPrivate,
           showActivityStatus: !!p.showActivityStatus,
@@ -52,88 +124,37 @@ export default function PrivacySettingsScreen() {
           hideOnlineStatus: !!p.hideOnlineStatus,
         });
       } catch {
-        // ignore for now
+        // keep defaults when the privacy document is missing
       }
     };
+
     load();
-  }, [user?.userId]);
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
 
-  const privacyCount = Object.values(privacy).filter(Boolean).length;
-
-  const update = async (key: keyof typeof privacy, value: boolean) => {
-    if (savingKeys[key]) return;
+  const update = async (key: keyof PrivacyState, value: boolean) => {
+    if (!userId || savingKeys[key]) return;
 
     setSavingKeys((prev) => ({ ...prev, [key]: true }));
     setPrivacy((prev) => ({ ...prev, [key]: value }));
     try {
-      if (user) {
-        await settingsService.updatePrivacySettings(user.userId, { [key]: value } as any);
-      }
-    } catch {
+      await settingsService.updatePrivacySettings(userId, { [key]: value } as any);
+    } catch (error) {
+      console.error(`Failed to update ${key}:`, error);
       setPrivacy((prev) => ({ ...prev, [key]: !value }));
     } finally {
       setSavingKeys((prev) => ({ ...prev, [key]: false }));
     }
   };
 
-  const ToggleRow = ({
-    icon,
-    title,
-    value,
-    onChange,
-    settingKey,
-  }: {
-    icon: keyof typeof Ionicons.glyphMap;
-    title: string;
-    value: boolean;
-    onChange: (v: boolean) => void;
-    settingKey: string;
-  }) => {
-    const isSaving = !!savingKeys[settingKey];
-
-    return (
-      <View style={[styles.row, isSaving && styles.rowDisabled]}>
-        <View style={styles.left}>
-          <View style={styles.iconWrap}>
-            <Ionicons name={icon} size={18} color={c.accent.primary} />
-          </View>
-          <Text style={styles.title}>{title}</Text>
-        </View>
-        {isSaving ? (
-          <View style={styles.statusBadge}>
-            <Text style={styles.statusBadgeText}>Saving</Text>
-          </View>
-        ) : (
-          <Switch
-            value={!!value}
-            onValueChange={onChange}
-            disabled={isSaving}
-            trackColor={{ false: c.border.light, true: `${c.accent.primary}40` }}
-            thumbColor={value ? '#FFFFFF' : c.text.secondary}
-          />
-        )}
-      </View>
-    );
-  };
-
-  const NavRow = ({ icon, title, routeName }: { icon: keyof typeof Ionicons.glyphMap; title: string; routeName: string }) => (
-    <TouchableOpacity style={styles.row} onPress={() => (navigation as any).navigate(routeName)} activeOpacity={0.78}>
-      <View style={styles.left}>
-        <View style={styles.iconWrap}>
-          <Ionicons name={icon} size={18} color={c.accent.primary} />
-        </View>
-        <Text style={styles.title}>{title}</Text>
-      </View>
-      <Ionicons name="chevron-forward" size={18} color={c.text.muted} />
-    </TouchableOpacity>
-  );
-
   const translateY = intro.interpolate({ inputRange: [0, 1], outputRange: [10, 0] });
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerButton} activeOpacity={0.75}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerButton} activeOpacity={0.75} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <Ionicons name="chevron-back" size={24} color={c.text.primary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Privacy</Text>
@@ -147,55 +168,83 @@ export default function PrivacySettingsScreen() {
       >
         <Animated.View style={{ opacity: intro, transform: [{ translateY }] }}>
           <View style={styles.heroCard}>
-            <Text style={styles.heroTitle}>Private by choice</Text>
-            <Text style={styles.heroText}>Control visibility, message signals, and activity state without repeated write churn.</Text>
-            <View style={styles.heroPillRow}>
-              <View style={styles.heroPill}>
-                <Text style={styles.heroPillText}>{privacy.isPrivate ? 'Private account' : 'Public account'}</Text>
-              </View>
-              <View style={styles.heroPill}>
-                <Text style={styles.heroPillText}>{privacyCount}/5 active</Text>
-              </View>
-            </View>
+            <Text style={styles.heroTitle}>{privacy.isPrivate ? 'Private account' : 'Public account'}</Text>
+            <Text style={styles.heroText}>
+              {privacy.isPrivate
+                ? 'Only approved followers can see your posts and stories.'
+                : 'Anyone can see your posts and stories.'}
+            </Text>
           </View>
 
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Account Privacy</Text>
+            <Text style={styles.sectionTitle}>Account</Text>
             <View style={styles.card}>
-              <ToggleRow icon="lock-closed" title="Private Account" value={privacy.isPrivate} onChange={(v) => update('isPrivate', v)} settingKey="isPrivate" />
+              <ToggleRow
+                c={c}
+                styles={styles}
+                icon="lock-closed"
+                title="Private Account"
+                value={privacy.isPrivate}
+                saving={!!savingKeys.isPrivate}
+                onChange={(v) => update('isPrivate', v)}
+              />
             </View>
           </View>
 
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Activity</Text>
             <View style={styles.card}>
-              <ToggleRow icon="pulse" title="Show Activity Status" value={privacy.showActivityStatus} onChange={(v) => update('showActivityStatus', v)} settingKey="showActivityStatus" />
-              <ToggleRow icon="checkmark-done" title="Show Read Receipts" value={privacy.showReadReceipts} onChange={(v) => update('showReadReceipts', v)} settingKey="showReadReceipts" />
-              <ToggleRow icon="time" title="Hide Last Seen" value={privacy.hideLastSeen} onChange={(v) => update('hideLastSeen', v)} settingKey="hideLastSeen" />
-              <ToggleRow icon="wifi" title="Hide Online Status" value={privacy.hideOnlineStatus} onChange={(v) => update('hideOnlineStatus', v)} settingKey="hideOnlineStatus" />
-            </View>
-          </View>
-
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Interactions</Text>
-            <View style={styles.card}>
-              <NavRow icon="chatbubble" title="Who Can Message You" routeName="MessagePrivacy" />
-              <NavRow icon="pricetag" title="Who Can Tag You" routeName="TagPrivacy" />
+              <ToggleRow
+                c={c}
+                styles={styles}
+                icon="pulse"
+                title="Show Activity Status"
+                value={privacy.showActivityStatus}
+                saving={!!savingKeys.showActivityStatus}
+                onChange={(v) => update('showActivityStatus', v)}
+              />
+              <ToggleRow
+                c={c}
+                styles={styles}
+                icon="checkmark-done"
+                title="Show Read Receipts"
+                value={privacy.showReadReceipts}
+                saving={!!savingKeys.showReadReceipts}
+                onChange={(v) => update('showReadReceipts', v)}
+              />
+              <ToggleRow
+                c={c}
+                styles={styles}
+                icon="time"
+                title="Hide Last Seen"
+                value={privacy.hideLastSeen}
+                saving={!!savingKeys.hideLastSeen}
+                onChange={(v) => update('hideLastSeen', v)}
+              />
+              <ToggleRow
+                c={c}
+                styles={styles}
+                icon="wifi"
+                title="Hide Online Status"
+                value={privacy.hideOnlineStatus}
+                saving={!!savingKeys.hideOnlineStatus}
+                onChange={(v) => update('hideOnlineStatus', v)}
+              />
             </View>
           </View>
 
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Stories</Text>
             <View style={styles.card}>
-              <NavRow icon="eye-off" title="Hide Story From" routeName="HideStory" />
-              <NavRow icon="star" title="Close Friends" routeName="CloseFriends" />
+              <NavRow c={c} styles={styles} icon="eye-off" title="Hide Story From" onPress={() => (navigation as any).navigate('HideStory')} />
+              <NavRow c={c} styles={styles} icon="star" title="Close Friends" onPress={() => (navigation as any).navigate('CloseFriends')} />
             </View>
           </View>
 
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Safety</Text>
             <View style={styles.card}>
-              <NavRow icon="ban" title="Blocked Users" routeName="BlockedUsers" />
+              <NavRow c={c} styles={styles} icon="ban" title="Blocked Users" onPress={() => (navigation as any).navigate('BlockedUsers')} />
             </View>
           </View>
         </Animated.View>
@@ -204,7 +253,7 @@ export default function PrivacySettingsScreen() {
   );
 }
 
-const createStyles = (c: ReturnType<typeof useColors>) => StyleSheet.create({
+const createStyles = (c: ThemeColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: c.background.primary },
   header: {
     flexDirection: 'row',
@@ -229,42 +278,22 @@ const createStyles = (c: ReturnType<typeof useColors>) => StyleSheet.create({
   contentContainer: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.xl },
   heroCard: {
     backgroundColor: c.background.tertiary,
-    borderRadius: 24,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: c.border.subtle,
     padding: spacing.lg,
     marginBottom: spacing.xl,
   },
   heroTitle: {
-    fontSize: typography.fontSize.lg,
+    fontSize: typography.fontSize.base,
     fontWeight: '700' as any,
     color: c.text.primary,
-    marginBottom: 6,
+    marginBottom: 4,
   },
   heroText: {
     fontSize: typography.fontSize.sm,
     lineHeight: 20,
     color: c.text.secondary,
-    marginBottom: spacing.md,
-  },
-  heroPillRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-  },
-  heroPill: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    marginRight: spacing.sm,
-    marginBottom: spacing.xs,
-    backgroundColor: c.background.secondary,
-    borderWidth: 1,
-    borderColor: c.border.subtle,
-  },
-  heroPillText: {
-    fontSize: 12,
-    fontWeight: '700' as any,
-    color: c.text.primary,
   },
   section: { marginBottom: spacing.xl },
   sectionTitle: {
@@ -278,7 +307,7 @@ const createStyles = (c: ReturnType<typeof useColors>) => StyleSheet.create({
   },
   card: {
     backgroundColor: c.background.tertiary,
-    borderRadius: 22,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: c.border.subtle,
     overflow: 'hidden',
@@ -287,7 +316,7 @@ const createStyles = (c: ReturnType<typeof useColors>) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    minHeight: 68,
+    minHeight: 60,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
     borderBottomWidth: 1,
@@ -298,9 +327,9 @@ const createStyles = (c: ReturnType<typeof useColors>) => StyleSheet.create({
   },
   left: { flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: spacing.md },
   iconWrap: {
-    width: 38,
-    height: 38,
-    borderRadius: 14,
+    width: 36,
+    height: 36,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: spacing.md,

@@ -922,13 +922,28 @@ export class PostService {
     }
     
     // Filter out current user from following list
-    const followingOnly = followingIds.filter(id => id !== currentUserId);
+    const followingOnly = (followingIds || []).filter(id => id !== currentUserId);
     
     // Firestore 'in' operator supports max 10 values
     const chunk = followingOnly.slice(0, 10);
 
     if (chunk.length === 0) {
-      return { posts: [], lastDoc: null };
+      const explorePosts = await this.getExplorePosts(Math.max(limitCount * 2, 40), currentUserId);
+      const randomPosts = explorePosts
+        .filter((post) => post.authorId !== currentUserId)
+        .sort(() => Math.random() - 0.5)
+        .slice(0, limitCount);
+      if (shouldCache && randomPosts.length > 0) {
+        storageService.setCachedData(
+          STORAGE_KEYS.USER_SPECIFIC.CACHED_FEED,
+          currentUserId,
+          randomPosts,
+          30 * 60 * 1000
+        );
+        await cacheIntegration.cacheFeedPosts(currentUserId, randomPosts);
+        void this.warmPostAssets(randomPosts);
+      }
+      return { posts: randomPosts, lastDoc: null };
     }
 
     const postsRef = collection(db, 'posts');
@@ -988,7 +1003,6 @@ export class PostService {
 
     const hydratedVisiblePosts = await this.applyLikedStateToPosts(visiblePosts, currentUserId);
 
-    // Save to cache (only first page, 30 min TTL)
     if (shouldCache && hydratedVisiblePosts.length > 0) {
       storageService.setCachedData(
         STORAGE_KEYS.USER_SPECIFIC.CACHED_FEED,
@@ -998,12 +1012,35 @@ export class PostService {
       );
       await cacheIntegration.cacheFeedPosts(currentUserId, hydratedVisiblePosts);
       void this.warmPostAssets(hydratedVisiblePosts);
-      console.log('Feed cached:', hydratedVisiblePosts.length, 'posts');
+    }
+
+    if (hydratedVisiblePosts.length > 0) {
+      return {
+        posts: hydratedVisiblePosts,
+        lastDoc: snapshot.docs[snapshot.docs.length - 1] || null,
+      };
+    }
+
+    const explorePosts = await this.getExplorePosts(Math.max(limitCount * 2, 40), currentUserId);
+    const randomPosts = explorePosts
+      .filter((post) => post.authorId !== currentUserId)
+      .sort(() => Math.random() - 0.5)
+      .slice(0, limitCount);
+
+    if (shouldCache && randomPosts.length > 0) {
+      storageService.setCachedData(
+        STORAGE_KEYS.USER_SPECIFIC.CACHED_FEED,
+        currentUserId,
+        randomPosts,
+        30 * 60 * 1000
+      );
+      await cacheIntegration.cacheFeedPosts(currentUserId, randomPosts);
+      void this.warmPostAssets(randomPosts);
     }
 
     return {
-      posts: hydratedVisiblePosts,
-      lastDoc: snapshot.docs[snapshot.docs.length - 1] || null,
+      posts: randomPosts,
+      lastDoc: null,
     };
   }
 

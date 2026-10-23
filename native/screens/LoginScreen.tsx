@@ -1,6 +1,6 @@
-import { InlineLoadingSkeleton, ButtonLoadingSkeleton } from '../components/ui/LoadingSkeleton';
+import { InlineLoadingSkeleton } from '../components/ui/LoadingSkeleton';
 import { useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, ScrollView, KeyboardAvoidingView, Platform, Alert } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, Alert } from "react-native";
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from "../contexts/AuthContext";
 import { Image } from 'expo-image';
@@ -16,34 +16,30 @@ export default function LoginScreen({ navigation }: any) {
       Alert.alert("Error", "Please enter email and password");
       return;
     }
-    
     try {
       await signIn(email, password);
-      // Navigation will happen automatically when auth state updates
     } catch (error: any) {
       Alert.alert("Login failed", error.message || "Invalid email or password");
     }
   };
 
-
   return (
-    <KeyboardAvoidingView 
+    <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : "height"}
       style={styles.container}
     >
-      <ScrollView 
-        contentContainerStyle={styles.scrollContent as any}
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
+        {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity 
-            onPress={() => navigation.goBack()}
-            style={styles.backButton}
-          >
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
             <Ionicons name="chevron-back" size={24} color="#888" />
           </TouchableOpacity>
           <Image
-            source={require('../../public/Iris-logo.png')}
+            source={require('../../assets/Images/bumbylogo.png')}
             style={styles.logo}
             contentFit="contain"
           />
@@ -51,11 +47,13 @@ export default function LoginScreen({ navigation }: any) {
         </View>
 
         <View style={styles.content}>
+          {/* Title */}
           <View style={styles.titleSection}>
             <Text style={styles.title}>Welcome Back</Text>
-            <Text style={styles.subtitle}>Login to continue to Iris</Text>
+            <Text style={styles.subtitle}>Login to continue to Bumby</Text>
           </View>
 
+          {/* Form */}
           <View style={styles.form}>
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Email or Phone</Text>
@@ -64,7 +62,7 @@ export default function LoginScreen({ navigation }: any) {
                 <TextInput
                   style={styles.input}
                   placeholder="Enter your email or phone"
-                  placeholderTextColor="#666"
+                  placeholderTextColor="#555"
                   value={email}
                   onChangeText={setEmail}
                   autoCapitalize="none"
@@ -76,10 +74,11 @@ export default function LoginScreen({ navigation }: any) {
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Password</Text>
               <View style={styles.inputContainer}>
+                <Ionicons name="lock-closed-outline" size={20} color="#888" style={styles.inputIcon} />
                 <TextInput
                   style={[styles.input, styles.passwordInput]}
                   placeholder="Enter your password"
-                  placeholderTextColor="#666"
+                  placeholderTextColor="#555"
                   value={password}
                   onChangeText={setPassword}
                   secureTextEntry={!showPassword}
@@ -88,16 +87,16 @@ export default function LoginScreen({ navigation }: any) {
                   onPress={() => setShowPassword(!showPassword)}
                   style={styles.eyeIcon}
                 >
-                  <Ionicons 
-                    name={showPassword ? "eye-off-outline" : "eye-outline"} 
-                    size={20} 
-                    color="#888" 
+                  <Ionicons
+                    name={showPassword ? "eye-off-outline" : "eye-outline"}
+                    size={20}
+                    color="#888"
                   />
                 </TouchableOpacity>
               </View>
             </View>
 
-            <TouchableOpacity 
+            <TouchableOpacity
               onPress={() => navigation.navigate('ForgotPassword')}
               style={styles.forgotPassword}
             >
@@ -117,7 +116,7 @@ export default function LoginScreen({ navigation }: any) {
             </TouchableOpacity>
           </View>
 
-
+          {/* Sign up link */}
           <View style={styles.signupSection}>
             <Text style={styles.signupText}>Don't have an account? </Text>
             <TouchableOpacity onPress={() => navigation.navigate('Signup')}>
@@ -142,22 +141,26 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 8,
   },
   backButton: {
-    padding: 4,
+    padding: 6,
   },
   logo: {
-    width: 120,
-    height: 40,
+    width: 48,
+    height: 48,
+    borderRadius: 12,
   },
   spacer: {
-    width: 32,
+    width: 36,
   },
   content: {
     flex: 1,
     paddingHorizontal: 24,
-    paddingTop: 8,
+    paddingTop: 16,
+    paddingBottom: 32,
   },
   titleSection: {
     alignItems: 'center',
@@ -167,64 +170,72 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: 'bold',
     color: '#fff',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   subtitle: {
     fontSize: 14,
     color: '#888',
   },
   form: {
-    marginBottom: 24,
+    width: '100%',
+    marginBottom: 8,
   },
   inputGroup: {
     marginBottom: 20,
+    width: '100%',
   },
   label: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#fff',
+    color: '#ccc',
     marginBottom: 8,
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1a1a1a',
+    backgroundColor: '#111',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#333',
+    borderColor: '#2a2a2a',
+    width: '100%',
   },
   inputIcon: {
-    marginLeft: 12,
+    marginLeft: 14,
   },
   input: {
     flex: 1,
-    height: 48,
+    height: 50,
     paddingHorizontal: 12,
     color: '#fff',
-    fontSize: 16,
+    fontSize: 15,
   },
   passwordInput: {
-    paddingRight: 48,
+    paddingRight: 44,
   },
   eyeIcon: {
     position: 'absolute',
-    right: 12,
-    padding: 8,
+    right: 14,
+    height: 50,
+    justifyContent: 'center',
+    paddingHorizontal: 4,
   },
   forgotPassword: {
     alignSelf: 'flex-end',
     marginBottom: 24,
+    paddingVertical: 4,
   },
   forgotPasswordText: {
-    color: '#fff',
-    fontSize: 14,
+    color: '#4DD0E1',
+    fontSize: 13,
+    fontWeight: '500',
   },
   loginButton: {
-    backgroundColor: '#fff',
+    backgroundColor: '#4DD0E1',
     height: 52,
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
+    width: '100%',
   },
   loginButtonDisabled: {
     opacity: 0.5,
@@ -232,21 +243,21 @@ const styles = StyleSheet.create({
   loginButtonText: {
     color: '#000',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   signupSection: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginTop: 24,
+    alignItems: 'center',
+    marginTop: 28,
   },
   signupText: {
     color: '#888',
     fontSize: 14,
   },
   signupLink: {
-    color: '#fff',
+    color: '#4DD0E1',
     fontSize: 14,
     fontWeight: '600',
   },
 });
-

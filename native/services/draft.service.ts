@@ -21,15 +21,6 @@ export interface PostDraft {
   }>;
   allowSharing?: boolean;
   audience?: 'public' | 'followers' | 'close_friends' | 'closeFriends';
-  backgroundMusic?: {
-    trackId?: string;
-    trackTitle?: string;
-    artistName?: string;
-    coverArtURL?: string;
-    streamURL?: string;
-    clipStart?: number;
-    clipEnd?: number;
-  };
   tags?: string[];
   mentions?: string[];
   taggedUsers?: string[];
@@ -46,8 +37,6 @@ export interface GlimpseDraft {
   caption?: string;
   mediaURL?: string;
   thumbnailURL?: string;
-  musicId?: string;
-  musicTitle?: string;
   tags?: string[];
   taggedPeople?: string[];
   settings?: {

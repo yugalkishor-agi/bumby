@@ -3,7 +3,7 @@ import { immer } from 'zustand/middleware/immer';
 
 // Element Types
 export type ElementType = 'text' | 'drawing' | 'sticker' | 'gifSticker' | 'widget';
-export type Tool = 'none' | 'text' | 'draw' | 'sticker' | 'filter' | 'music' | 'widget';
+export type Tool = 'none' | 'text' | 'draw' | 'sticker' | 'filter' | 'widget';
 export type BrushType = 'pen' | 'marker' | 'neon' | 'pencil' | 'eraser';
 export type WidgetType = 'poll' | 'quiz' | 'slider' | 'question' | 'countdown' | 'mention' | 'hashtag';
 
@@ -100,16 +100,6 @@ export interface HistoryState {
   filters: FilterState;
 }
 
-// Music State
-export interface MusicState {
-  uri: string | null;
-  name: string;
-  duration: number;
-  trimStart: number;
-  trimEnd: number;
-  volume: number;
-}
-
 // Editor Store
 interface EditorStore {
   // Canvas
@@ -128,9 +118,6 @@ interface EditorStore {
   
   // Filters
   filters: FilterState;
-  
-  // Music
-  music: MusicState | null;
   
   // History
   history: HistoryState[];
@@ -180,10 +167,6 @@ interface EditorStore {
   setTextSize: (size: number) => void;
   setTextFont: (font: string) => void;
   
-  // Music actions
-  setMusic: (music: MusicState) => void;
-  removeMusic: () => void;
-  
   // Utility
   bringToFront: (id: string) => void;
   sendToBack: (id: string) => void;
@@ -210,7 +193,6 @@ export const useEditorStore = create<EditorStore>()(
     selectedIds: [],
     activeTool: 'none',
     filters: { ...initialFilterState },
-    music: null,
     history: [],
     historyIndex: -1,
     maxHistory: 50,
@@ -393,15 +375,6 @@ export const useEditorStore = create<EditorStore>()(
       state.textFont = font;
     }),
     
-    // Music actions
-    setMusic: (music) => set((state) => {
-      state.music = music;
-    }),
-    
-    removeMusic: () => set((state) => {
-      state.music = null;
-    }),
-    
     // Utility
     bringToFront: (id) => set((state) => {
       const element = state.elements.find(el => el.id === id);
@@ -440,7 +413,6 @@ export const useEditorStore = create<EditorStore>()(
       state.selectedIds = [];
       state.activeTool = 'none';
       state.filters = { ...initialFilterState };
-      state.music = null;
       state.history = [];
       state.historyIndex = -1;
       state.isDrawing = false;
@@ -458,7 +430,6 @@ export const getEditorState = () => {
     return {
       elements: [],
       filters: { brightness: 0, contrast: 1, saturation: 1, blur: 0, temperature: 0 },
-      music: null,
       backgroundImage: null,
       imageWidth: 1080,
       imageHeight: 1920,

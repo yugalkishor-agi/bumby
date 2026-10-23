@@ -1,4 +1,4 @@
-﻿import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
+﻿import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Appearance } from 'react-native';
 import { useAuth } from './AuthContext';
@@ -9,11 +9,20 @@ type ThemePreference = 'dark' | 'light' | 'auto';
 interface ThemeContextType {
   theme: 'dark' | 'light';
   preference: ThemePreference;
-  setPreference: (pref: ThemePreference) => void;
-  toggleTheme: () => void;
+  setPreference: (pref: ThemePreference) => Promise<void>;
+  toggleTheme: () => Promise<void>;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
+
+const STORAGE_KEY = 'iris-theme-preference';
+
+const resolveTheme = (preference: ThemePreference): 'dark' | 'light' => {
+  if (preference === 'auto') {
+    return Appearance.getColorScheme() === 'dark' ? 'dark' : 'light';
+  }
+  return preference;
+};
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
@@ -21,89 +30,130 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [preference, setPreferenceState] = useState<ThemePreference>('dark');
   const [isInitialized, setIsInitialized] = useState(false);
   const [syncedUserId, setSyncedUserId] = useState<string | null>(null);
-  const lastSavedRef = useRef<{ userId: string | null; pref: ThemePreference | null }>({ userId: null, pref: null });
+
+  const userId = user?.userId ?? null;
+  // Tracks the preference the user explicitly picked for the current account so
+  // a slow backend sync can never overwrite their choice.
+  const localChoiceRef = useRef<{ userId: string | null; pref: ThemePreference | null }>({ userId: null, pref: null });
+  const preferenceRef = useRef<ThemePreference>('dark');
 
   useEffect(() => {
     const load = async () => {
-      const savedPref = await AsyncStorage.getItem('iris-theme-preference');
-      const pref = (savedPref === 'light' || savedPref === 'dark' || savedPref === 'auto') ? (savedPref as ThemePreference) : 'dark';
-      setPreferenceState(pref);
-      const resolved = pref === 'auto' ? (Appearance.getColorScheme() === 'dark' ? 'dark' : 'light') : pref;
-      setTheme(resolved);
-      setIsInitialized(true);
+      try {
+        const savedPref = await AsyncStorage.getItem(STORAGE_KEY);
+        const pref: ThemePreference =
+          savedPref === 'light' || savedPref === 'dark' || savedPref === 'auto' ? (savedPref as ThemePreference) : 'dark';
+        preferenceRef.current = pref;
+        setPreferenceState(pref);
+        setTheme(resolveTheme(pref));
+      } catch {
+        setTheme(resolveTheme('dark'));
+      } finally {
+        setIsInitialized(true);
+      }
     };
-    load();
+    void load();
   }, []);
 
+  // Pull the server-side preference once per account. This is read-only: the
+  // remote value never gets written back, so a stale device default can no
+  // longer overwrite the account's saved theme.
   useEffect(() => {
     if (!isInitialized) return;
 
-    if (!user?.userId) {
+    if (!userId) {
       setSyncedUserId(null);
       return;
     }
 
-    if (syncedUserId === user.userId) return;
+    if (syncedUserId === userId) return;
+
+    let active = true;
 
     const syncFromBackend = async () => {
       try {
-        const settings = await settingsService.getUserSettings(user.userId);
+        const settings = await settingsService.getUserSettings(userId);
         const remoteTheme = settings?.theme;
+        if (!active) return;
+
         if (remoteTheme === 'light' || remoteTheme === 'dark' || remoteTheme === 'auto') {
-          setPreferenceState(remoteTheme);
-          lastSavedRef.current = { userId: user.userId, pref: remoteTheme };
+          // A local pick for this account always wins over the server value.
+          if (localChoiceRef.current.userId !== userId) {
+            preferenceRef.current = remoteTheme;
+            setPreferenceState(remoteTheme);
+            setTheme(resolveTheme(remoteTheme));
+          }
         }
       } catch {
-        // Ignore and keep local preference
+        // Keep the local preference when the server is unreachable.
       } finally {
-        setSyncedUserId(user.userId);
+        if (active) setSyncedUserId(userId);
       }
     };
 
-    syncFromBackend();
-  }, [isInitialized, user?.userId, syncedUserId]);
+    void syncFromBackend();
+    return () => {
+      active = false;
+    };
+  }, [isInitialized, userId, syncedUserId]);
 
+  // Persist the preference locally and resolve the active palette.
   useEffect(() => {
     if (!isInitialized) return;
 
-    const apply = async () => {
-      await AsyncStorage.setItem('iris-theme-preference', preference);
-      if (user?.userId) {
-        const lastSaved = lastSavedRef.current;
-        if (!(lastSaved.userId === user.userId && lastSaved.pref === preference)) {
-          try {
-            await settingsService.updateSettings(user.userId, { theme: preference as any });
-            lastSavedRef.current = { userId: user.userId, pref: preference };
-          } catch {}
-        }
-      }
-      const resolved = preference === 'auto' ? (Appearance.getColorScheme() === 'dark' ? 'dark' : 'light') : preference;
-      setTheme(resolved);
-    };
-    apply();
-  }, [isInitialized, preference, user?.userId]);
+    preferenceRef.current = preference;
+
+    void AsyncStorage.setItem(STORAGE_KEY, preference).catch(() => undefined);
+    setTheme(resolveTheme(preference));
+  }, [isInitialized, preference]);
 
   useEffect(() => {
     if (preference !== 'auto') return;
     const sub: any = Appearance.addChangeListener(({ colorScheme }) => {
       setTheme(colorScheme === 'dark' ? 'dark' : 'light');
     });
-    return () => { try { sub?.remove?.(); } catch {} };
+    return () => {
+      try {
+        sub?.remove?.();
+      } catch {}
+    };
   }, [preference]);
 
-  const toggleTheme = () => {
-    setPreferenceState(prev => prev === 'dark' ? 'light' : 'dark');
-  };
+  const setPreference = useCallback(
+    async (pref: ThemePreference) => {
+      const previous = preferenceRef.current;
+      if (previous === pref) return;
 
-  const setPreference = (pref: ThemePreference) => {
-    setPreferenceState(pref);
-  };
+      preferenceRef.current = pref;
+      setPreferenceState(pref);
+      localChoiceRef.current = { userId, pref };
 
-  return (
-    <ThemeContext.Provider value={{ theme, preference, setPreference, toggleTheme }}>
-      {children}
-    </ThemeContext.Provider>
+      if (!userId) return;
+
+      try {
+        await settingsService.updateSettings(userId, { theme: pref });
+      } catch (error) {
+        console.error('Failed to save theme preference:', error);
+        // Roll back so the UI keeps matching what is stored on the server.
+        preferenceRef.current = previous;
+        setPreferenceState(previous);
+        localChoiceRef.current = { userId, pref: previous };
+        throw error;
+      }
+    },
+    [userId]
   );
+
+  const toggleTheme = useCallback(async () => {
+    await setPreference(preferenceRef.current === 'dark' ? 'light' : 'dark');
+  }, [setPreference]);
+
+  const value = useMemo<ThemeContextType>(
+    () => ({ theme, preference, setPreference, toggleTheme }),
+    [theme, preference, setPreference, toggleTheme]
+  );
+
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
 
 export function useTheme() {
@@ -113,5 +163,3 @@ export function useTheme() {
   }
   return context;
 }
-
-

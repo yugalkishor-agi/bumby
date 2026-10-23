@@ -11,8 +11,12 @@ export const styles = StyleSheet.create({
     height: '100%',
     backgroundColor: '#000',
   },
-  glimpseContainer: {
+  glimpseStage: {
     flex: 1,
+    backgroundColor: '#000',
+  },
+  glimpseContainer: {
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: '#000',
   },
   gradient: {

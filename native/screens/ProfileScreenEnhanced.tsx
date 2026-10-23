@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, SafeAreaView, ActivityIndicator, RefreshControl, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
+import { messageService } from '../services/message.service';
 import { OtherUserProfileHeader } from '../components/profile/OtherUserProfileHeader';
 import { OwnProfileHeader } from '../components/profile/OwnProfileHeader';
 import { ProfileHighlightRing } from '../components/profile/ProfileHighlightRing';
@@ -227,7 +228,10 @@ export default function ProfileScreenEnhanced({ navigation, route }: any) {
             actionLoading={actionLoading}
             mutualFollowers={mutualFollowers}
             onFollow={handleFollow}
-            onMessage={() => navigation.navigate('Chat', { userId: displayUserId })}
+            onMessage={() => {
+              const conversationId = currentUser ? messageService.getDirectConversationId(currentUser.userId, displayUserId) : undefined;
+              navigation.navigate('Chat', { userId: displayUserId, ...(conversationId ? { conversationId } : {}) });
+            }}
             onShare={handleShareProfile}
             navigation={navigation}
             displayUserId={displayUserId}
@@ -303,7 +307,7 @@ export default function ProfileScreenEnhanced({ navigation, route }: any) {
                   {isOwnProfile && (
                     <TouchableOpacity
                       style={styles.highlightItem}
-                      onPress={() => navigation.navigate('StoryHighlightsManager')}
+                      onPress={() => (navigation as any).navigate('Highlights', { userId: displayUserId })}
                     >
                       <ProfileHighlightRing variant="add" />
                       <Text style={styles.highlightName}>New</Text>

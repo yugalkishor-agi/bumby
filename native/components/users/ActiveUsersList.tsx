@@ -82,18 +82,14 @@ export function ActiveUsersList({
 
     // Default behavior: start chat with the user
     if (!currentUser) return;
-    
-    try {
-      const conversationId = await messageService.getOrCreateDirectConversation(currentUser.userId, user.userId);
-      (navigation as any).navigate('Chat', {
-        userId: user.userId,
-        conversationId,
-      });
-    } catch (error) {
-      console.error('Failed to start chat with user:', error);
-      // Fallback: navigate to user profile
-      (navigation as any).navigate('UserProfile', { userId: user.userId });
-    }
+
+    // Open the chat immediately; the conversation document is created in the
+    // background by the chat screen.
+    const conversationId = messageService.getDirectConversationId(currentUser.userId, user.userId);
+    (navigation as any).navigate('Chat', {
+      userId: user.userId,
+      conversationId,
+    });
   };
 
   const getLastSeenText = (lastSeen: any) => {
@@ -187,8 +183,7 @@ export function ActiveUsersList({
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ScreenSkeleton variant="list" rows={6} />
-        <Text style={styles.loadingText}>Loading active users...</Text>
+        <ScreenSkeleton variant="people" rows={7} showHeader={false} />
       </View>
     );
   }
@@ -255,9 +250,6 @@ const styles = StyleSheet.create({
   },
   loadingContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: spacing.xxl,
   },
   loadingText: {
     fontSize: typography.fontSize.base,

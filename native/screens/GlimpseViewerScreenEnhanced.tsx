@@ -1,5 +1,5 @@
 import { InlineLoadingSkeleton, ButtonLoadingSkeleton } from '../components/ui/LoadingSkeleton';
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, Dimensions, TouchableOpacity, TouchableWithoutFeedback, ActivityIndicator, Alert, Share, Animated, StatusBar, Modal, KeyboardAvoidingView, TextInput, Platform, LayoutChangeEvent, Easing } from 'react-native';
 import { PanGestureHandler, State, TapGestureHandler, LongPressGestureHandler } from 'react-native-gesture-handler';
@@ -28,19 +28,6 @@ import { Image } from 'expo-image';
 import { FlashList } from '@shopify/flash-list';
 
 const { width, height } = Dimensions.get('window');
-
-let glimpseMusicAudioModeConfigured = false;
-const ensureGlimpseMusicAudioMode = async () => {
-  if (glimpseMusicAudioModeConfigured) return;
-  await Audio.setAudioModeAsync({
-    allowsRecordingIOS: false,
-    playsInSilentModeIOS: true,
-    shouldDuckAndroid: true,
-    playThroughEarpieceAndroid: false,
-    staysActiveInBackground: false,
-  });
-  glimpseMusicAudioModeConfigured = true;
-};
 
 const extractMediaDimensions = (item: any): { width: number; height: number } | null => {
   const candidates = [
@@ -174,11 +161,13 @@ export default function GlimpseViewerScreenEnhanced() {
     const setExpandedCommentThreads = useGlimpseViewerScreenEnhancedStore(s => s.setExpandedCommentThreads);
 
   // Refs
-  const videoRefs = useRef<Map<number, Video>>(new Map());
+  // Keyed by glimpseId so the native player instance survives index changes
+  // (the viewer keeps a window of +/-1 mounted, so swiping never re-loads a video).
+  const videoRefs = useRef<Map<string, Video>>(new Map());
   const voiceSoundRefs = useRef<Map<string, Audio.Sound>>(new Map());
-  const backgroundMusicSoundRef = useRef<Audio.Sound | null>(null);
   const pendingVoiceRefs = useRef<Set<string>>(new Set());
   const panY = useRef(new Animated.Value(0)).current;
+  const uiFade = useRef(new Animated.Value(1)).current;
   const swipeAnimatingRef = useRef(false);
   const interactionHydrationTokenRef = useRef(0);
   const currentStatusRequestRef = useRef(0);
@@ -234,21 +223,13 @@ export default function GlimpseViewerScreenEnhanced() {
   const resumeCurrentVideo = useCallback(async () => {
     const current = glimpses[currentIndex];
     if (!current || current.mediaType !== 'video') return;
-    const player = videoRefs.current.get(currentIndex) as any;
+    const player = videoRefs.current.get(current.glimpseId) as any;
     if (!player || typeof player?.playAsync !== 'function') return;
     try {
       await player.playAsync();
     } catch {}
   }, [currentIndex, glimpses]);
 
-
-  const stopBackgroundMusic = useCallback(async () => {
-    const sound = backgroundMusicSoundRef.current;
-    backgroundMusicSoundRef.current = null;
-    if (!sound) return;
-    try { await sound.stopAsync(); } catch {}
-    try { await sound.unloadAsync(); } catch {}
-  }, []);
 
   const seedInteractionFromGlimpses = useCallback((items: Glimpse[]) => {
     if (!Array.isArray(items) || items.length === 0) return;
@@ -280,66 +261,6 @@ export default function GlimpseViewerScreenEnhanced() {
     });
   }, []);
 
-  const currentBackgroundMusic = glimpses[currentIndex]?.backgroundMusic;
-  const currentBackgroundMusicStream = currentBackgroundMusic?.streamURL || '';
-  const currentBackgroundMusicStartMs = Math.max(0, Math.floor(Number(currentBackgroundMusic?.clipStart || 0) * 1000));
-  const currentBackgroundMusicEndMs = Math.max(currentBackgroundMusicStartMs, Math.floor(Number(currentBackgroundMusic?.clipEnd || 0) * 1000));
-
-  useEffect(() => {
-    if (!currentBackgroundMusicStream || muted || paused) {
-      void stopBackgroundMusic();
-      return;
-    }
-
-    let cancelled = false;
-    const loopStartMs = currentBackgroundMusicStartMs;
-    const loopEndMs = currentBackgroundMusicEndMs > currentBackgroundMusicStartMs ? currentBackgroundMusicEndMs : 0;
-
-    const loadMusic = async () => {
-      try {
-        await ensureGlimpseMusicAudioMode();
-        await stopBackgroundMusic();
-        const { sound } = await Audio.Sound.createAsync(
-          { uri: currentBackgroundMusicStream },
-          {
-            shouldPlay: true,
-            isLooping: false,
-            volume: 1,
-            rate: 1,
-            shouldCorrectPitch: true,
-            positionMillis: loopStartMs,
-          }
-        );
-
-        if (cancelled) {
-          await sound.unloadAsync();
-          return;
-        }
-
-        backgroundMusicSoundRef.current = sound;
-        sound.setOnPlaybackStatusUpdate((status: any) => {
-          if (!status?.isLoaded) return;
-          if (loopEndMs > loopStartMs && typeof status.positionMillis === 'number' && status.positionMillis >= loopEndMs - 120) {
-            void sound.setPositionAsync(loopStartMs).then(() => sound.playAsync()).catch(() => undefined);
-            return;
-          }
-          if (status.didJustFinish) {
-            void sound.setPositionAsync(loopStartMs).then(() => sound.playAsync()).catch(() => undefined);
-          }
-        });
-      } catch (error) {
-        console.error('Glimpse music playback failed:', error);
-      }
-    };
-
-    void loadMusic();
-
-    return () => {
-      cancelled = true;
-      void stopBackgroundMusic();
-    };
-  }, [currentBackgroundMusicEndMs, currentBackgroundMusicStartMs, currentBackgroundMusicStream, muted, paused, stopBackgroundMusic]);
-  // Load glimpses if not provided
   useEffect(() => {
     if (!glimpses.length) {
       loadGlimpse();
@@ -380,6 +301,18 @@ export default function GlimpseViewerScreenEnhanced() {
       setCurrentIndex(targetIndex);
     }
   }, [glimpseId, glimpses, currentIndex]);
+
+  // If the feed shrinks (refresh, deletion, restored store) make sure the
+  // active index still points at an item - otherwise the window renders
+  // nothing and the screen goes black.
+  useEffect(() => {
+    if (glimpses.length === 0) return;
+    if (currentIndex > glimpses.length - 1) {
+      setCurrentIndex(glimpses.length - 1);
+    } else if (currentIndex < 0) {
+      setCurrentIndex(0);
+    }
+  }, [glimpses.length, currentIndex, setCurrentIndex]);
 
   // Initialize interaction states
   useEffect(() => {
@@ -445,12 +378,25 @@ export default function GlimpseViewerScreenEnhanced() {
     };
   }, [currentIndex, glimpses, user?.userId]);
 
-  // Prefetch next image on index change
+  // Warm the neighbouring media so the swipe lands on an already-decoded frame.
   useEffect(() => {
-    const next = glimpses[currentIndex + 1];
-    if (next && next.mediaType === 'image' && next.mediaURL) {
-      Image.prefetch(next.mediaURL).catch(() => {});
-    }
+    const neighbours = [glimpses[currentIndex + 1], glimpses[currentIndex + 2], glimpses[currentIndex + 3], glimpses[currentIndex - 1], glimpses[currentIndex - 2]];
+    neighbours.forEach((item) => {
+      if (!item) return;
+      const poster = item.thumbnailURL || item.coverImageURL;
+      if (poster) {
+        Image.prefetch(poster).catch(() => {});
+      }
+      if (item.mediaType === 'image' && item.mediaURL) {
+        Image.prefetch(item.mediaURL).catch(() => {});
+      }
+      if (item.mediaType === 'video') {
+        const uri = item.mediaURL || poster;
+        if (uri) {
+          Image.prefetch(uri).catch(() => {});
+        }
+      }
+    });
   }, [currentIndex, glimpses]);
 
   // Focus effect for video playback + full-screen UI
@@ -474,11 +420,16 @@ export default function GlimpseViewerScreenEnhanced() {
   );
 
   useEffect(() => {
-    return () => {
-      void pauseAllVideos();
-      void stopBackgroundMusic();
-    };
-  }, [pauseAllVideos, stopBackgroundMusic]);
+    // When the video is not the active one, pause it to free up decode resources.
+    videoRefs.current.forEach((player: any, glimpseId: string) => {
+      if (glimpseId === glimpses[currentIndex]?.glimpseId) return;
+      try {
+        if (typeof player?.pauseAsync === 'function') {
+          void player.pauseAsync();
+        }
+      } catch {}
+    });
+  }, [currentIndex, glimpses]);
 
   useEffect(() => {
     actionEntrance.like.setValue(0);
@@ -589,15 +540,17 @@ export default function GlimpseViewerScreenEnhanced() {
     [followingIds, user?.userId]
   );
 
-  useEffect(() => {
-    const current = glimpses[currentIndex];
-    if (!current || !user?.userId) return;
+  const activeGlimpseId = glimpses[currentIndex]?.glimpseId;
+  const activeGlimpseAuthorId = glimpses[currentIndex]?.authorId;
 
-    const isOwn = current.authorId === user.userId;
-    setFollowingAuthor(isOwn || followingIds.has(current.authorId));
+  useEffect(() => {
+    if (!activeGlimpseId || !user?.userId) return;
+
+    const isOwn = activeGlimpseAuthorId === user.userId;
+    setFollowingAuthor(isOwn || followingIds.has(activeGlimpseAuthorId));
     setCaptionExpanded(false);
-    loadLikedByFollowing(current.glimpseId);
-  }, [currentIndex, glimpses, user?.userId, followingIds, loadLikedByFollowing]);
+    loadLikedByFollowing(activeGlimpseId);
+  }, [activeGlimpseId, activeGlimpseAuthorId, user?.userId, followingIds, loadLikedByFollowing]);
 
   useEffect(() => {
     const current = glimpses[currentIndex];
@@ -643,14 +596,21 @@ export default function GlimpseViewerScreenEnhanced() {
   useEffect(() => {
     if (!showCommentsSheet || !commentsTargetId) return;
     const totalComments = sheetComments.length;
-    setCommentCounts((prev) => ({ ...prev, [commentsTargetId]: totalComments }));
-    setGlimpses((prev) =>
-      prev.map((g) =>
-        g.glimpseId === commentsTargetId
-          ? { ...g, stats: { ...g.stats, commentsCount: totalComments } }
-          : g
-      )
-    );
+    setCommentCounts((prev) => (
+      prev[commentsTargetId] === totalComments
+        ? prev
+        : { ...prev, [commentsTargetId]: totalComments }
+    ));
+    setGlimpses((prev) => {
+      let changed = false;
+      const next = prev.map((g) => {
+        if (g.glimpseId !== commentsTargetId) return g;
+        if (Number(g?.stats?.commentsCount ?? 0) === totalComments) return g;
+        changed = true;
+        return { ...g, stats: { ...g.stats, commentsCount: totalComments } };
+      });
+      return changed ? next : prev;
+    });
   }, [sheetComments, commentsTargetId, showCommentsSheet]);
 
   useEffect(() => {
@@ -783,31 +743,56 @@ export default function GlimpseViewerScreenEnhanced() {
       }
 
       swipeAnimatingRef.current = true;
+      // The next/prev glimpse is already mounted one screen away, so a single
+      // translate carries it into place - no unmount, no re-buffer.
       const outY = direction === 'next' ? -height : height;
-      const inStartY = direction === 'next' ? height : -height;
 
-      Animated.timing(panY, {
-        toValue: outY,
-        duration: 170,
-        useNativeDriver: true,
-      }).start(() => {
-        setCurrentIndex((prev) =>
-          direction === 'next'
-            ? Math.min(prev + 1, glimpses.length - 1)
-            : Math.max(prev - 1, 0)
-        );
-        panY.setValue(inStartY);
+      Animated.parallel([
         Animated.timing(panY, {
-          toValue: 0,
-          duration: 190,
+          toValue: outY,
+          duration: 230,
+          easing: Easing.out(Easing.cubic),
           useNativeDriver: true,
-        }).start(() => {
+        }),
+        Animated.timing(uiFade, {
+          toValue: 0.15,
+          duration: 170,
+          easing: Easing.out(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ]).start(() => {
+        const nextIndex = direction === 'next'
+          ? Math.min(currentIndex + 1, glimpses.length - 1)
+          : Math.max(currentIndex - 1, 0);
+
+        // If the feed changed mid-gesture the target may already be the
+        // current item. Snap back instead of leaving the stage translated
+        // off-screen (which looks like a black screen while audio plays).
+        if (nextIndex === currentIndex) {
+          panY.setValue(0);
+          Animated.timing(uiFade, { toValue: 1, duration: 200, useNativeDriver: true }).start();
           swipeAnimatingRef.current = false;
-        });
+          return;
+        }
+
+        setCurrentIndex(nextIndex);
       });
     },
-    [currentIndex, glimpses.length, panY]
+    [currentIndex, glimpses.length, panY, uiFade]
   );
+
+  // Reset the drag offset once the new index has been committed so the
+  // freshly-mounted window lines up exactly with what the user just swiped to.
+  useLayoutEffect(() => {
+    panY.setValue(0);
+    Animated.timing(uiFade, {
+      toValue: 1,
+      duration: 200,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true,
+    }).start();
+    swipeAnimatingRef.current = false;
+  }, [currentIndex, panY, uiFade]);
 
   const handlePanGesture = ({ nativeEvent }: any) => {
     if (swipeAnimatingRef.current || showCommentsSheet) return;
@@ -853,33 +838,48 @@ export default function GlimpseViewerScreenEnhanced() {
     const currentGlimpse = glimpses[currentIndex];
     if (!currentGlimpse || !user) return;
 
-    triggerHeartBurst();
-    const isCurrentlyLiked = liked[currentGlimpse.glimpseId];
-    if (isCurrentlyLiked) return;
+    const glimpseKey = currentGlimpse.glimpseId;
+    const isCurrentlyLiked = !!liked[glimpseKey];
+    if (isCurrentlyLiked) {
+      // Already liked - just replay the burst so the gesture always feels alive.
+      triggerHeartBurst();
+      return;
+    }
 
-    likeMutationVersionRef.current[currentGlimpse.glimpseId] = (likeMutationVersionRef.current[currentGlimpse.glimpseId] || 0) + 1;
+    triggerHeartBurst();
+    likeMutationVersionRef.current[glimpseKey] = (likeMutationVersionRef.current[glimpseKey] || 0) + 1;
+
+    // Optimistic like, rolled back if the write fails.
+    setLiked((prev) => ({ ...prev, [glimpseKey]: true }));
+    setGlimpses((prev) => prev.map((g) =>
+      g.glimpseId === glimpseKey
+        ? {
+            ...g,
+            isLiked: true,
+            stats: {
+              ...g.stats,
+              likesCount: Math.max(0, (g.stats?.likesCount || 0) + 1),
+            },
+          }
+        : g
+    ));
 
     try {
-      await glimpseService.likeGlimpse(currentGlimpse.glimpseId, user.userId);
-
-      setLiked((prev) => ({
-        ...prev,
-        [currentGlimpse.glimpseId]: true,
-      }));
-
+      await glimpseService.likeGlimpse(glimpseKey, user.userId);
+    } catch (error) {
+      setLiked((prev) => ({ ...prev, [glimpseKey]: false }));
       setGlimpses((prev) => prev.map((g) =>
-        g.glimpseId === currentGlimpse.glimpseId
+        g.glimpseId === glimpseKey
           ? {
               ...g,
-              isLiked: true,
+              isLiked: false,
               stats: {
                 ...g.stats,
-                likesCount: Math.max(0, (g.stats?.likesCount || 0) + 1),
+                likesCount: Math.max(0, (g.stats?.likesCount || 0) - 1),
               },
             }
           : g
       ));
-    } catch (error) {
       console.error('Failed to toggle like:', error);
     }
   };
@@ -888,33 +888,56 @@ export default function GlimpseViewerScreenEnhanced() {
     const currentGlimpse = glimpses[currentIndex];
     if (!currentGlimpse || !user) return;
 
-    const isCurrentlyLiked = liked[currentGlimpse.glimpseId];
-    likeMutationVersionRef.current[currentGlimpse.glimpseId] = (likeMutationVersionRef.current[currentGlimpse.glimpseId] || 0) + 1;
+    const glimpseKey = currentGlimpse.glimpseId;
+    const isCurrentlyLiked = !!liked[glimpseKey];
+    const nextLiked = !isCurrentlyLiked;
+    const delta = nextLiked ? 1 : -1;
+
+    likeMutationVersionRef.current[glimpseKey] = (likeMutationVersionRef.current[glimpseKey] || 0) + 1;
+
+    // Optimistic: the heart reacts instantly, the network call settles later.
+    setLiked((prev) => ({ ...prev, [glimpseKey]: nextLiked }));
+    setGlimpses((prev) =>
+      prev.map((g) =>
+        g.glimpseId === glimpseKey
+          ? {
+              ...g,
+              isLiked: nextLiked,
+              stats: {
+                ...g.stats,
+                likesCount: Math.max(0, (g.stats?.likesCount || 0) + delta),
+              },
+            }
+          : g
+      )
+    );
+    if (nextLiked) {
+      triggerHeartBurst();
+    }
 
     try {
       if (isCurrentlyLiked) {
-        await glimpseService.unlikeGlimpse(currentGlimpse.glimpseId, user.userId);
+        await glimpseService.unlikeGlimpse(glimpseKey, user.userId);
       } else {
-        await glimpseService.likeGlimpse(currentGlimpse.glimpseId, user.userId);
-        triggerHeartBurst();
+        await glimpseService.likeGlimpse(glimpseKey, user.userId);
       }
-
-      setLiked((prev) => ({ ...prev, [currentGlimpse.glimpseId]: !isCurrentlyLiked }));
+    } catch (error) {
+      // Roll back to the previous state.
+      setLiked((prev) => ({ ...prev, [glimpseKey]: isCurrentlyLiked }));
       setGlimpses((prev) =>
         prev.map((g) =>
-          g.glimpseId === currentGlimpse.glimpseId
+          g.glimpseId === glimpseKey
             ? {
                 ...g,
-                isLiked: !isCurrentlyLiked,
+                isLiked: isCurrentlyLiked,
                 stats: {
                   ...g.stats,
-                  likesCount: Math.max(0, (g.stats?.likesCount || 0) + (isCurrentlyLiked ? -1 : 1)),
+                  likesCount: Math.max(0, (g.stats?.likesCount || 0) - delta),
                 },
               }
             : g
         )
       );
-    } catch (error) {
       console.error('Failed to toggle like:', error);
     }
   };
@@ -926,11 +949,22 @@ const handleComment = () => {
       return;
     }
 
-    setCommentsTargetId(currentGlimpse.glimpseId);
-    setCommentText('');
-    setReplyingToComment(null);
-    setExpandedCommentThreads(new Set());
-    setShowCommentsSheet(true);
+    (navigation as any).navigate('Comments', {
+      postId: currentGlimpse.glimpseId,
+      postType: 'glimpse',
+      fromGlimpses: true,
+      onCommentAdded: (newCount: number) => {
+        if (typeof newCount === 'number') {
+          setGlimpses((prev) =>
+            prev.map((g, idx) =>
+              idx === currentIndex
+                ? { ...g, stats: { ...(g.stats as any), commentsCount: newCount } }
+                : g
+            ) as Glimpse[]
+          );
+        }
+      },
+    });
   };
 
   const closeCommentsSheet = useCallback(() => {
@@ -1107,7 +1141,7 @@ const handleComment = () => {
     try {
       await Share.share({
         message: `Check out this glimpse by ${currentGlimpse.authorUsername}`,
-        url: `https://iris.app/glimpse/${currentGlimpse.glimpseId}`,
+        url: `https://bumby.app/glimpse/${currentGlimpse.glimpseId}`,
       });
     } catch (error) {
       console.error('Failed to share glimpse externally:', error);
@@ -1411,8 +1445,7 @@ const handleComment = () => {
         }
 
         if (typeof status.positionMillis === 'number' && status.isPlaying) {
-          const glimpseIndex = glimpses.findIndex((item) => item.glimpseId === id);
-          const player = glimpseIndex >= 0 ? (videoRefs.current.get(glimpseIndex) as any) : null;
+          const player = videoRefs.current.get(id) as any;
           if (player && trimStartMs > 0 && status.positionMillis < trimStartMs - 60) {
             void player.setPositionAsync(trimStartMs);
           } else if (player && trimEndMs > trimStartMs && status.positionMillis >= trimEndMs - 80) {
@@ -1425,14 +1458,21 @@ const handleComment = () => {
       if (typeof status.positionMillis === 'number') {
         const activeIndex = glimpses.findIndex((item) => item.glimpseId === id);
         const activeItem = activeIndex >= 0 ? glimpses[activeIndex] : null;
-        const shouldPlayVoice = activeIndex === currentIndex && Boolean(status.isPlaying) && !muted && !paused;
-        void syncVoiceoverPlayback(activeItem, status.positionMillis, shouldPlayVoice);
-      } else {
+        const isCurrent = activeIndex === currentIndex;
+        // Voice-over only tracks the glimpse that is on screen.
+        if (isCurrent) {
+          const shouldPlayVoice = Boolean(status.isPlaying) && !muted && !paused;
+          void syncVoiceoverPlayback(activeItem, status.positionMillis, shouldPlayVoice);
+        }
+      } else if (glimpses[currentIndex]?.glimpseId === id) {
         void stopAllVoiceSounds();
       }
 
       if (typeof status.isBuffering === 'boolean') {
-        setBuffering(status.isBuffering);
+        // Only the glimpse the user is actually watching drives the spinner.
+        if (glimpses[currentIndex]?.glimpseId === id) {
+          setBuffering(status.isBuffering);
+        }
       }
     } catch {}
   };
@@ -1471,9 +1511,14 @@ const handleComment = () => {
 
     const meta = playbackMetaRef.current[current.glimpseId];
     const ratio = meta?.durationMillis ? Math.max(0, Math.min(1, meta.positionMillis / meta.durationMillis)) : 0;
-    lastTimelineRatioRef.current = ratio;
-    timelineProgress.setValue(ratio);
-  }, [currentIndex, glimpses, timelineProgress]);
+    if (Math.abs(lastTimelineRatioRef.current - ratio) > 0.001) {
+      lastTimelineRatioRef.current = ratio;
+      timelineProgress.setValue(ratio);
+    } else {
+      lastTimelineRatioRef.current = ratio;
+      timelineProgress.setValue(ratio);
+    }
+  }, [currentIndex]);
   const updateTimelineProgress = useCallback((locationX: number) => {
 
     const widthValue = Math.max(1, timelineWidthRef.current);
@@ -1493,7 +1538,7 @@ const handleComment = () => {
 
     const meta = playbackMetaRef.current[current.glimpseId];
     const durationMillis = meta?.durationMillis;
-    const player = videoRefs.current.get(currentIndex) as any;
+    const player = videoRefs.current.get(current.glimpseId) as any;
     if (!player || !durationMillis) return;
 
     const trimStartMs = Math.max(0, Number(current.trimStart ?? current.editorMeta?.trimStart ?? 0));
@@ -1519,7 +1564,7 @@ const handleComment = () => {
 
     const meta = playbackMetaRef.current[current.glimpseId];
     const durationMillis = meta?.durationMillis;
-    const player = videoRefs.current.get(currentIndex) as any;
+    const player = videoRefs.current.get(current.glimpseId) as any;
     if (!player || !durationMillis) return;
 
     const trimStartMs = Math.max(0, Number(current.trimStart ?? current.editorMeta?.trimStart ?? 0));
@@ -1591,7 +1636,7 @@ const handleComment = () => {
       </View>
     );
   };
-  const renderGlimpse = (glimpse: Glimpse, index: number) => {
+  const renderGlimpse = useCallback((glimpse: Glimpse, index: number, offsetY: number) => {
     const isActive = index === currentIndex;
     const editorMeta: GlimpseEditorMeta = glimpse.editorMeta || {};
     const selectedStyle = getGlimpseStylePreset(editorMeta.styleId);
@@ -1630,12 +1675,12 @@ const handleComment = () => {
     const trimStartMs = Math.max(0, Number(glimpse.trimStart ?? editorMeta.trimStart ?? 0));
 
     return (
-      <View key={glimpse.glimpseId} style={styles.glimpseContainer}>
+      <View style={StyleSheet.absoluteFillObject} pointerEvents={isActive ? 'auto' : 'none'}>
         {glimpse.mediaType === 'video' ? (
           <Video
             ref={(ref) => {
               if (ref) {
-                videoRefs.current.set(index, ref);
+                videoRefs.current.set(glimpse.glimpseId, ref);
               }
             }}
             source={{ uri: glimpse.mediaURL }}
@@ -1646,20 +1691,29 @@ const handleComment = () => {
             isLooping={false}
             isMuted={muted || editedVideoMuted}
             volume={(muted || editedVideoMuted) ? 0 : editedVideoVolume}
+            useNativeControls={false}
             onReadyForDisplay={(event: any) => {
               const naturalSize = event?.naturalSize;
               const mediaWidth = Number(naturalSize?.width);
               const mediaHeight = Number(naturalSize?.height);
               if (mediaWidth > 0 && mediaHeight > 0) {
-                setMediaNaturalSizes((prev) => ({ ...prev, [glimpse.glimpseId]: { width: mediaWidth, height: mediaHeight } }));
+                setMediaNaturalSizes((prev) => {
+                  const existing = prev[glimpse.glimpseId];
+                  if (existing && existing.width === mediaWidth && existing.height === mediaHeight) {
+                    return prev;
+                  }
+                  return { ...prev, [glimpse.glimpseId]: { width: mediaWidth, height: mediaHeight } };
+                });
               }
             }}
             onError={(error) => console.error('Video error:', error)}
-            onLoadStart={() => setBuffering(true)}
+            onLoadStart={() => {
+              if (isActive) setBuffering(true);
+            }}
             onLoad={() => {
-              setBuffering(false);
+              if (isActive) setBuffering(false);
               if (trimStartMs > 0) {
-                const player = videoRefs.current.get(index) as any;
+                const player = videoRefs.current.get(glimpse.glimpseId) as any;
                 void player?.setPositionAsync?.(trimStartMs);
               }
             }}
@@ -1670,6 +1724,8 @@ const handleComment = () => {
             source={{ uri: glimpse.mediaURL }}
             style={styles.media}
             contentFit={getImageResizeModeForGlimpse(glimpse)}
+            cachePolicy="memory-disk"
+            transition={150}
           />
         )}
 
@@ -1718,13 +1774,13 @@ const handleComment = () => {
         />
 
         {buffering && isActive && (
-          <View style={styles.bufferingOverlay}>
+          <View style={styles.bufferingOverlay} pointerEvents="none">
             <ActivityIndicator size="large" color="#fff" />
           </View>
         )}
       </View>
     );
-  };
+  }, [currentIndex, paused, muted, mediaNaturalSizes, setMediaNaturalSizes, handlePlaybackStatusUpdate, getResizeModeForGlimpse, getImageResizeModeForGlimpse]);
 
   const renderUI = () => {
     const currentGlimpse = glimpses[currentIndex];
@@ -1819,27 +1875,18 @@ const handleComment = () => {
                 Followed by {mutualBy[0]?.username}{mutualBy.length > 1 ? ` and ${mutualBy.length - 1} others` : ''}
               </Text>
             ) : null}
-
-            {currentGlimpse.backgroundMusic ? (
-              <View style={styles.viewerMusicRow}>
-                <Ionicons name="musical-notes" size={16} color="white" />
-                <Text style={styles.viewerMusicText} numberOfLines={1}>
-                  {currentGlimpse.backgroundMusic.trackTitle}{' - '}{currentGlimpse.backgroundMusic.artistName}
-                </Text>
-              </View>
-            ) : null}
           </View>
 
           <View style={styles.viewerActions}>
             <TouchableOpacity style={styles.viewerActionButton} onPress={() => animateActionPress('like', handleLike)}>
               <Ionicons name={liked[currentGlimpse.glimpseId] ? 'heart' : 'heart-outline'} size={34} color={liked[currentGlimpse.glimpseId] ? '#ef4444' : '#fff'} />
-              {!currentGlimpseHideLikes ? <Text style={styles.viewerActionText}>{currentGlimpse.stats.likesCount}</Text> : null}
+              {!((currentGlimpse?.settings?.hideLikes === true)) ? <Text style={styles.viewerActionText}>{currentGlimpse.stats.likesCount}</Text> : null}
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.viewerActionButton, !currentGlimpseCommentsEnabled && styles.viewerActionDisabled]} onPress={() => animateActionPress('comment', handleComment)}>
+            <TouchableOpacity style={[styles.viewerActionButton, !((currentGlimpse?.allowReplies !== false && currentGlimpse?.settings?.allowComments !== false)) && styles.viewerActionDisabled]} onPress={() => animateActionPress('comment', handleComment)}>
               <Ionicons name="chatbubble-outline" size={32} color="#fff" />
               <Text style={styles.viewerActionText}>{commentCounts[currentGlimpse.glimpseId] ?? currentGlimpse.stats.commentsCount}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.viewerActionButton, !currentGlimpseSharingEnabled && styles.viewerActionDisabled]} onPress={() => animateActionPress('share', handleShare)}>
+            <TouchableOpacity style={[styles.viewerActionButton, !((currentGlimpse?.allowSharing !== false)) && styles.viewerActionDisabled]} onPress={() => animateActionPress('share', handleShare)}>
               <Ionicons name="paper-plane-outline" size={32} color="#fff" />
               <Text style={styles.viewerActionText}>{currentGlimpse.stats.sharesCount}</Text>
             </TouchableOpacity>
@@ -1865,6 +1912,37 @@ const handleComment = () => {
     );
   };
 
+  // A window of five mounted items. More neighbours = less buffering on swipe.
+  const renderWindow = useCallback(() => {
+    const windowItems: React.ReactNode[] = [];
+    const offsets: Array<[number, number]> = [
+      [currentIndex - 2, -height * 2],
+      [currentIndex - 1, -height],
+      [currentIndex, 0],
+      [currentIndex + 1, height],
+      [currentIndex + 2, height * 2],
+    ];
+
+    offsets.forEach(([index, offsetY]) => {
+      if (index < 0 || index >= glimpses.length) return;
+      const item = glimpses[index];
+      if (!item) return;
+      windowItems.push(
+        <View
+          key={item.glimpseId}
+          style={[StyleSheet.absoluteFillObject, { transform: [{ translateY: offsetY }] }]}
+          pointerEvents={index === currentIndex ? 'auto' : 'none'}
+        >
+          {renderGlimpse(item, index, offsetY)}
+        </View>
+      );
+    });
+
+    return windowItems;
+  }, [currentIndex, glimpses, renderGlimpse]);
+
+  const currentGlimpse = glimpses[currentIndex];
+
   if (loading && glimpses.length === 0) {
     return (
       <View style={styles.screen}>
@@ -1876,26 +1954,35 @@ const handleComment = () => {
     );
   }
 
-  const currentGlimpse = glimpses[currentIndex];
-  const currentGlimpseCommentsEnabled = currentGlimpse?.allowReplies !== false && currentGlimpse?.settings?.allowComments !== false;
-  const currentGlimpseSharingEnabled = currentGlimpse?.allowSharing !== false;
-  const currentGlimpseHideLikes = currentGlimpse?.settings?.hideLikes === true;
-
   return (
     <View style={styles.screen}>
       <StatusBar hidden={false} />
       <PanGestureHandler onHandlerStateChange={handlePanGesture} onGestureEvent={handlePanGesture}>
-        <Animated.View style={{ flex: 1, transform: [{ translateY: panY }] }}>
+        <View style={styles.screen}>
           <TapGestureHandler ref={doubleTapRef} numberOfTaps={2} onActivated={handleDoubleTap}>
             <TapGestureHandler waitFor={doubleTapRef} numberOfTaps={1} onActivated={handleTap}>
               <View style={styles.screen}>
-                {currentGlimpse ? renderGlimpse(currentGlimpse, currentIndex) : null}
-                {renderUI()}
+                <View style={styles.glimpseStage} pointerEvents="box-none">
+                  <Animated.View
+                    style={[StyleSheet.absoluteFillObject, { transform: [{ translateY: panY }] }]}
+                    pointerEvents="box-none"
+                  >
+                    {renderWindow()}
+                  </Animated.View>
+                </View>
+
+                <Animated.View
+                  style={[StyleSheet.absoluteFillObject, { opacity: uiFade }]}
+                  pointerEvents="box-none"
+                >
+                  {renderUI()}
+                </Animated.View>
+
                 {renderProgressBar()}
               </View>
             </TapGestureHandler>
           </TapGestureHandler>
-        </Animated.View>
+        </View>
       </PanGestureHandler>
 
       <Modal visible={showMenu} transparent animationType="fade" onRequestClose={() => setShowMenu(false)}>

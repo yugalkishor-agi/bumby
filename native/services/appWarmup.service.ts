@@ -271,7 +271,6 @@ class AppWarmupService {
         createdAt: post?.createdAt,
         location: typeof post?.location === 'string' ? post.location : post?.location?.name,
         tags: Array.isArray(post?.tags) ? post.tags : [],
-        backgroundMusic: post?.backgroundMusic || null,
         taggedUsers: Array.isArray(post?.taggedUsers) ? post.taggedUsers : [],
         collaborators: Array.isArray(post?.collaborators) ? post.collaborators : [],
       }));

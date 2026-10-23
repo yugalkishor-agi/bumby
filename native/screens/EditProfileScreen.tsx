@@ -1,496 +1,346 @@
-import { InlineLoadingSkeleton, ButtonLoadingSkeleton } from '../components/ui/LoadingSkeleton';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   View,
   Text,
-  StyleSheet,
-  TextInput,
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
   Alert,
-  SafeAreaView,
-  KeyboardAvoidingView,
-  Platform,
+  StyleSheet,
+  RefreshControl,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+import { Image } from 'expo-image';
 import { useAuth } from '../contexts/AuthContext';
 import { userService } from '../services/user.service';
-import { borderRadius, colors, spacing, typography } from '../styles/theme';
+import { borderRadius, spacing, typography, useColors } from '../styles/theme';
+import type { User } from '../types/database';
 
-const MAX_BIO_LENGTH = 150;
+interface ProfileSummary {
+  displayName: string;
+  username: string;
+  bio: string;
+  website: string;
+  location: string;
+  avatarURL?: string;
+}
 
-const normalizeWebsite = (value: string) => {
-  const trimmed = value.trim();
-  if (!trimmed) return '';
-  if (/^https?:\/\//i.test(trimmed)) return trimmed;
-  return `https://${trimmed}`;
+const EMPTY_SUMMARY: ProfileSummary = {
+  displayName: '',
+  username: '',
+  bio: '',
+  website: '',
+  location: '',
 };
 
 export default function EditProfileScreen() {
   const navigation = useNavigation();
-  const { user: currentUser, refreshUser } = useAuth();
+  const c = useColors();
+  const { user: currentUser } = useAuth();
+  const userId = currentUser?.userId ?? null;
+
+  const [profile, setProfile] = useState<ProfileSummary>(EMPTY_SUMMARY);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [formData, setFormData] = useState({
-    displayName: '',
-    username: '',
-    bio: '',
-    website: '',
-    location: '',
-  });
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    const loadUserData = async () => {
-      if (!currentUser) return;
-      try {
-        const userData = await userService.getUser(currentUser.userId);
-        if (userData) {
-          setFormData({
-            displayName: userData.displayName || '',
-            username: userData.username || '',
-            bio: userData.bio || '',
-            website: userData.website || '',
-            location: userData.location || '',
-          });
-        }
-      } catch (error) {
-        console.error('Failed to load user data', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadUserData();
-  }, [currentUser]);
-
-  const trimmedDisplayName = useMemo(() => formData.displayName.trim(), [formData.displayName]);
-  const normalizedWebsite = useMemo(() => normalizeWebsite(formData.website), [formData.website]);
-  const bioLength = formData.bio.length;
-
-  const setField = (key: keyof typeof formData, value: string) => {
-    setFormData((current) => ({ ...current, [key]: value }));
-  };
-
-  const handleSubmit = async () => {
-    if (!currentUser) return;
-
-    if (!trimmedDisplayName) {
-      Alert.alert('Display name required', 'Please enter a display name.');
+  const load = useCallback(async () => {
+    if (!userId) {
+      setLoading(false);
       return;
     }
 
-    if (formData.bio.length > MAX_BIO_LENGTH) {
-      Alert.alert('Bio too long', `Bio must stay within ${MAX_BIO_LENGTH} characters.`);
-      return;
-    }
-
-    setSaving(true);
     try {
-      await userService.updateUser(currentUser.userId, {
-        displayName: trimmedDisplayName,
-        bio: formData.bio.trim(),
-        website: normalizedWebsite,
-        location: formData.location.trim(),
+      const data = await userService.getUser(userId);
+      if (!data) {
+        // `getUser` resolves to null on failure - fall back to the auth user so
+        // the screen still shows something instead of an empty form.
+        console.warn('Profile unavailable, using cached session user');
+        setProfile({
+          displayName: currentUser?.displayName || '',
+          username: currentUser?.username || '',
+          bio: currentUser?.bio || '',
+          website: currentUser?.website || '',
+          location: currentUser?.location || '',
+          avatarURL: currentUser?.avatarURL,
+        });
+        return;
+      }
+
+      setProfile({
+        displayName: data.displayName || '',
+        username: data.username || '',
+        bio: data.bio || '',
+        website: data.website || '',
+        location: data.location || '',
+        avatarURL: data.avatarURL,
       });
-      await refreshUser();
-      Alert.alert('Profile updated', 'Your changes have been saved.');
-      navigation.goBack();
-    } catch (error: any) {
-      Alert.alert('Update failed', error?.message || 'Failed to update profile.');
+    } catch (error) {
+      console.error('Failed to load profile:', error);
+      setProfile({
+        displayName: currentUser?.displayName || '',
+        username: currentUser?.username || '',
+        bio: currentUser?.bio || '',
+        website: currentUser?.website || '',
+        location: currentUser?.location || '',
+        avatarURL: currentUser?.avatarURL,
+      });
     } finally {
-      setSaving(false);
+      setLoading(false);
     }
+  }, [userId]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void load();
+    }, [load])
+  );
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await load();
+    setRefreshing(false);
   };
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.accent.primary} />
+      <View style={[styles.loadingContainer, { backgroundColor: c.background.primary }]}>
+        <ActivityIndicator size="large" color={c.accent.primary} />
       </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView
-        style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    <View style={[styles.container, { backgroundColor: c.background.primary }]}>
+      <View style={[styles.header, { borderBottomColor: c.border.subtle }]}>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          style={styles.iconButton}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
+          <Ionicons name="chevron-back" size={24} color={c.text.primary} />
+        </TouchableOpacity>
+        <Text style={[styles.headerTitle, { color: c.text.primary }]}>Edit profile</Text>
+        <View style={styles.iconButton} />
+      </View>
+
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={c.text.secondary}
+          />
+        }
       >
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerIconButton} activeOpacity={0.7}>
-            <Ionicons name="chevron-back" size={24} color={colors.text.primary} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Edit profile</Text>
-          <TouchableOpacity
-            onPress={handleSubmit}
-            disabled={saving}
-            style={[styles.headerSaveButton, saving && styles.disabledButton]}
-            activeOpacity={0.8}
-          >
-            {saving ? (
-              <InlineLoadingSkeleton />
-            ) : (
-              <Text style={styles.headerSaveText}>Save</Text>
-            )}
-          </TouchableOpacity>
+        <View style={[styles.summaryCard, { backgroundColor: c.background.secondary, borderColor: c.border.light }]}>
+          {profile.avatarURL ? (
+            <Image
+              source={{ uri: profile.avatarURL }}
+              style={styles.avatar}
+              contentFit="cover"
+              transition={150}
+            />
+          ) : (
+            <View style={[styles.avatarPlaceholder, { backgroundColor: c.background.tertiary }]}>
+              <Ionicons name="person" size={28} color={c.text.muted} />
+            </View>
+          )}
+          <View style={styles.summaryText}>
+            <Text style={[styles.summaryName, { color: c.text.primary }]} numberOfLines={1}>
+              {profile.displayName || 'Add a name'}
+            </Text>
+            <Text style={[styles.summaryHandle, { color: c.text.secondary }]} numberOfLines={1}>
+              @{profile.username || 'username'}
+            </Text>
+          </View>
         </View>
 
-        <ScrollView
-          style={styles.content}
-          contentContainerStyle={styles.contentContainer as any}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          <LinearGradient
-            colors={['#111827', '#0B1220', '#05070B']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.heroCard}
-          >
-            <View style={styles.heroBadge}>
-              <Ionicons name="sparkles" size={16} color={colors.accent.primary} />
-              <Text style={styles.heroBadgeText}>Profile details</Text>
-            </View>
-            <Text style={styles.heroTitle}>Refine how your profile feels.</Text>
-            <Text style={styles.heroSubtitle}>
-              Changes save directly to your account and update your public profile across the app.
-            </Text>
-            <View style={styles.identityPill}>
-              <Ionicons name="at" size={14} color={colors.text.secondary} />
-              <Text style={styles.identityText}>{formData.username || 'username'}</Text>
-            </View>
-          </LinearGradient>
+        <View style={[styles.group, { backgroundColor: c.background.tertiary, borderColor: c.border.light }]}>
+          <Row
+            icon="person-circle-outline"
+            label="Profile photo"
+            value={profile.avatarURL ? 'Change' : 'Add'}
+            onPress={() => (navigation as any).navigate('AvatarEditor')}
+          />
+          <Row
+            icon="text-outline"
+            label="Display name"
+            value={profile.displayName}
+            onPress={() => (navigation as any).navigate('NameEditor')}
+          />
+          <Row
+            icon="document-text-outline"
+            label="Bio"
+            value={profile.bio}
+            onPress={() => (navigation as any).navigate('BioEditor')}
+            last
+          />
+        </View>
 
-          <View style={styles.sectionCard}>
-            <View style={styles.sectionHeader}>
-              <Ionicons name="person-circle-outline" size={18} color={colors.accent.primary} />
-              <Text style={styles.sectionTitle}>Public profile</Text>
-            </View>
+        <View style={[styles.group, { backgroundColor: c.background.tertiary, borderColor: c.border.light }]}>
+          <Row
+            icon="globe-outline"
+            label="Website"
+            value={profile.website}
+            onPress={() => (navigation as any).navigate('WebsiteEditor')}
+          />
+          <Row
+            icon="location-outline"
+            label="Location"
+            value={profile.location}
+            onPress={() => (navigation as any).navigate('LocationEditor')}
+            last
+          />
+        </View>
 
-            <View style={styles.field}>
-              <Text style={styles.label}>Display name</Text>
-              <TextInput
-                style={styles.input}
-                value={formData.displayName}
-                onChangeText={(text) => setField('displayName', text)}
-                placeholder="Your name"
-                placeholderTextColor={colors.text.muted}
-                maxLength={40}
-              />
-              <Text style={styles.helperText}>This is the name people see first on your profile.</Text>
-            </View>
+        <View style={[styles.group, { backgroundColor: c.background.tertiary, borderColor: c.border.light }]}>
+          <Row
+            icon="at-outline"
+            label="Username"
+            value={profile.username ? `@${profile.username}` : ''}
+            onPress={() =>
+              Alert.alert('Username is permanent', 'Your username cannot be changed.')
+            }
+            locked
+            last
+          />
+        </View>
+      </ScrollView>
+    </View>
+  );
+}
 
-            <View style={styles.field}>
-              <Text style={styles.label}>Username</Text>
-              <View style={styles.readOnlyInput}>
-                <Ionicons name="lock-closed" size={14} color={colors.text.muted} />
-                <Text style={styles.readOnlyValue}>{formData.username}</Text>
-              </View>
-              <Text style={styles.helperText}>Username stays fixed here to avoid broken mentions and profile links.</Text>
-            </View>
-          </View>
+function Row({
+  icon,
+  label,
+  value,
+  onPress,
+  last,
+  locked,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  value?: string;
+  onPress: () => void;
+  last?: boolean;
+  locked?: boolean;
+}) {
+  const c = useColors();
 
-          <View style={styles.sectionCard}>
-            <View style={styles.sectionHeader}>
-              <Ionicons name="document-text-outline" size={18} color={colors.accent.primary} />
-              <Text style={styles.sectionTitle}>Bio</Text>
-            </View>
-
-            <View style={styles.field}>
-              <TextInput
-                style={[styles.input, styles.textArea]}
-                value={formData.bio}
-                onChangeText={(text) => setField('bio', text)}
-                placeholder="Tell people something real about you"
-                placeholderTextColor={colors.text.muted}
-                multiline
-                numberOfLines={5}
-                maxLength={MAX_BIO_LENGTH}
-                textAlignVertical="top"
-              />
-              <View style={styles.metaRow}>
-                <Text style={styles.helperText}>Long bios will collapse with a more/less toggle on profile.</Text>
-                <Text style={styles.counterText}>{bioLength}/{MAX_BIO_LENGTH}</Text>
-              </View>
-            </View>
-          </View>
-
-          <View style={styles.sectionCard}>
-            <View style={styles.sectionHeader}>
-              <Ionicons name="globe-outline" size={18} color={colors.accent.primary} />
-              <Text style={styles.sectionTitle}>Links and location</Text>
-            </View>
-
-            <View style={styles.field}>
-              <Text style={styles.label}>Website</Text>
-              <TextInput
-                style={styles.input}
-                value={formData.website}
-                onChangeText={(text) => setField('website', text)}
-                placeholder="https://your-site.com"
-                placeholderTextColor={colors.text.muted}
-                keyboardType="url"
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-              <Text style={styles.helperText}>We auto-normalize the link before saving.</Text>
-            </View>
-
-            <View style={[styles.field, styles.lastField]}>
-              <Text style={styles.label}>Location</Text>
-              <TextInput
-                style={styles.input}
-                value={formData.location}
-                onChangeText={(text) => setField('location', text)}
-                placeholder="City, Country"
-                placeholderTextColor={colors.text.muted}
-                maxLength={60}
-              />
-              <Text style={styles.helperText}>Used in profile metadata and about-account surfaces.</Text>
-            </View>
-          </View>
-
-          <TouchableOpacity
-            style={[styles.primarySaveButton, saving && styles.disabledButton]}
-            onPress={handleSubmit}
-            disabled={saving}
-            activeOpacity={0.85}
-          >
-            <LinearGradient
-              colors={saving ? ['#1F2937', '#1F2937'] : ['#0EA5E9', '#2563EB']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.primarySaveGradient}
-            >
-              {saving ? (
-                <InlineLoadingSkeleton />
-              ) : (
-                <>
-                  <Ionicons name="checkmark-circle" size={18} color={colors.text.primary} />
-                  <Text style={styles.primarySaveText}>Save changes</Text>
-                </>
-              )}
-            </LinearGradient>
-          </TouchableOpacity>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.7}
+      style={[styles.row, !last && { borderBottomColor: c.border.subtle, borderBottomWidth: 1 }]}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+    >
+      <Ionicons name={icon} size={20} color={c.accent.primary} />
+      <Text style={[styles.rowLabel, { color: c.text.primary }]}>{label}</Text>
+      <Text
+        style={[styles.rowValue, { color: value ? c.text.secondary : c.text.muted }]}
+        numberOfLines={1}
+      >
+        {value || 'Not set'}
+      </Text>
+      <Ionicons
+        name={locked ? 'lock-closed' : 'chevron-forward'}
+        size={16}
+        color={c.text.muted}
+      />
+    </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background.primary,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: colors.background.primary,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.md,
+    paddingVertical: spacing.sm,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border.light,
-    backgroundColor: colors.background.primary,
   },
-  headerIconButton: {
+  iconButton: {
     width: 40,
     height: 40,
-    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.background.secondary,
-    borderWidth: 1,
-    borderColor: colors.border.subtle,
   },
   headerTitle: {
     fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.semibold as any,
-    color: colors.text.primary,
-  },
-  headerSaveButton: {
-    minWidth: 74,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.background.secondary,
-    borderWidth: 1,
-    borderColor: colors.border.medium,
-    paddingHorizontal: spacing.md,
-  },
-  headerSaveText: {
-    color: colors.accent.primary,
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold as any,
+    fontWeight: typography.fontWeight.semibold,
   },
   content: {
-    flex: 1,
-  },
-  contentContainer: {
     padding: spacing.lg,
     paddingBottom: spacing.xxxl,
-    gap: spacing.lg,
+    gap: spacing.md,
   },
-  heroCard: {
-    borderRadius: borderRadius.xl,
-    padding: spacing.xl,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-  },
-  heroBadge: {
-    flexDirection: 'row',
-    alignSelf: 'flex-start',
-    alignItems: 'center',
-    gap: spacing.xs,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 6,
-    borderRadius: borderRadius.full,
-    backgroundColor: 'rgba(14,165,233,0.12)',
-    marginBottom: spacing.md,
-  },
-  heroBadgeText: {
-    color: colors.text.secondary,
-    fontSize: typography.fontSize.xs,
-    fontWeight: typography.fontWeight.medium as any,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-  },
-  heroTitle: {
-    color: colors.text.primary,
-    fontSize: typography.fontSize.xxl,
-    fontWeight: typography.fontWeight.bold as any,
-    marginBottom: spacing.sm,
-  },
-  heroSubtitle: {
-    color: colors.text.secondary,
-    fontSize: typography.fontSize.sm,
-    lineHeight: 20,
-    marginBottom: spacing.lg,
-  },
-  identityPill: {
+  summaryCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    alignSelf: 'flex-start',
-    gap: spacing.xs,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.full,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1,
-    borderColor: colors.border.subtle,
-  },
-  identityText: {
-    color: colors.text.primary,
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.medium as any,
-  },
-  sectionCard: {
-    backgroundColor: colors.background.tertiary,
-    borderRadius: borderRadius.xl,
-    borderWidth: 1,
-    borderColor: colors.border.light,
+    gap: spacing.md,
     padding: spacing.lg,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    marginBottom: spacing.lg,
-  },
-  sectionTitle: {
-    color: colors.text.primary,
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.semibold as any,
-  },
-  field: {
-    marginBottom: spacing.lg,
-  },
-  lastField: {
-    marginBottom: 0,
-  },
-  label: {
-    color: colors.text.primary,
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold as any,
-    marginBottom: spacing.sm,
-  },
-  input: {
-    minHeight: 52,
     borderRadius: borderRadius.lg,
     borderWidth: 1,
-    borderColor: colors.border.medium,
-    backgroundColor: colors.background.secondary,
-    color: colors.text.primary,
-    fontSize: typography.fontSize.base,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
   },
-  readOnlyInput: {
-    minHeight: 52,
-    borderRadius: borderRadius.lg,
-    borderWidth: 1,
-    borderColor: colors.border.subtle,
-    backgroundColor: '#09090B',
-    paddingHorizontal: spacing.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
+  avatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
   },
-  readOnlyValue: {
-    color: colors.text.secondary,
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.medium as any,
-  },
-  textArea: {
-    minHeight: 124,
-  },
-  helperText: {
-    color: colors.text.secondary,
-    fontSize: typography.fontSize.xs,
-    lineHeight: 18,
-    marginTop: spacing.xs,
-  },
-  metaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.sm,
-    marginTop: spacing.xs,
-  },
-  counterText: {
-    color: colors.text.muted,
-    fontSize: typography.fontSize.xs,
-    fontWeight: typography.fontWeight.medium as any,
-  },
-  primarySaveButton: {
-    height: 54,
-    borderRadius: borderRadius.full,
-    overflow: 'hidden',
-  },
-  primarySaveGradient: {
-    flex: 1,
-    flexDirection: 'row',
+  avatarPlaceholder: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing.sm,
   },
-  primarySaveText: {
-    color: colors.text.primary,
+  summaryText: {
+    flex: 1,
+  },
+  summaryName: {
     fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.semibold as any,
+    fontWeight: typography.fontWeight.semibold,
   },
-  disabledButton: {
-    opacity: 0.6,
+  summaryHandle: {
+    fontSize: typography.fontSize.sm,
+    marginTop: 2,
+  },
+  group: {
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.lg,
+    minHeight: 56,
+  },
+  rowLabel: {
+    flex: 1,
+    fontSize: typography.fontSize.base,
+    fontWeight: typography.fontWeight.medium,
+  },
+  rowValue: {
+    maxWidth: '45%',
+    fontSize: typography.fontSize.sm,
+    textAlign: 'right',
   },
 });

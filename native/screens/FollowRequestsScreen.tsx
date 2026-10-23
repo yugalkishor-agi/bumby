@@ -71,7 +71,7 @@ export default function FollowRequestsScreen() {
       </View>
 
       {loading ? (
-        <ScreenSkeleton variant="list" rows={6} />
+        <ScreenSkeleton variant="people" rows={7} showHeader={false} />
       ) : (
         <FlashList estimatedItemSize={100}
           data={requests}

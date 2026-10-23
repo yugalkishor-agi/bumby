@@ -1,4 +1,4 @@
-﻿{
+{
   "project_info": {
     "project_number": "20621914868",
     "project_id": "socialapp-e5192",
@@ -12,7 +12,12 @@
           "package_name": "com.offcial.social"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "20621914868-ps8lrju0euanknekrbvge9hfcfg0a4fl.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyCRkTQxIcmP_buOJGwfbBwsKFkxr3cpHsw"
@@ -20,7 +25,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "20621914868-ps8lrju0euanknekrbvge9hfcfg0a4fl.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

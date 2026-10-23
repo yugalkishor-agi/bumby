@@ -103,9 +103,19 @@ export function useProfileRelationships(
   };
 
   const handleSuggestedFollow = useCallback(async (targetUser: any) => {
-    if (!currentUser?.userId || !targetUser?.userId || suggestionActionLoading[targetUser.userId]) return;
+    if (!currentUser?.userId || !targetUser?.userId) return;
 
-    setSuggestionActionLoading((prev) => ({ ...prev, [targetUser.userId]: true }));
+    let shouldProceed = true;
+    setSuggestionActionLoading((prev) => {
+      if (prev[targetUser.userId]) {
+        shouldProceed = false;
+        return prev;
+      }
+      shouldProceed = true;
+      return { ...prev, [targetUser.userId]: true };
+    });
+    if (!shouldProceed) return;
+
     try {
       if (targetUser?.isPrivate) {
         await userService.sendFollowRequest(currentUser.userId, targetUser.userId);
@@ -118,7 +128,7 @@ export function useProfileRelationships(
     } finally {
       setSuggestionActionLoading((prev) => ({ ...prev, [targetUser.userId]: false }));
     }
-  }, [currentUser?.userId, suggestionActionLoading]);
+  }, [currentUser?.userId]);
 
   const dismissPrivateSuggestion = useCallback((userId: string) => {
     setPrivateSuggestions((current) => current.filter((item) => item.userId !== userId));

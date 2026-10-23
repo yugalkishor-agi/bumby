@@ -180,7 +180,10 @@ export default function NewMessageScreen() {
           return;
         }
 
-        const conversationId = await messageService.getOrCreateDirectConversation(currentUser.userId, selectedUser.userId);
+        // Open the chat straight away — resolving/creating the conversation
+        // needs extra Firestore round trips and the chat screen creates the
+        // document in the background.
+        const conversationId = messageService.getDirectConversationId(currentUser.userId, selectedUser.userId);
 
         (navigation as any).navigate('Chat', {
           userId: selectedUser.userId,

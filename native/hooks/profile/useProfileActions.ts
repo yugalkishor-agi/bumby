@@ -16,8 +16,8 @@ export function useProfileActions(
     try {
       const username = profileUser?.username || '';
       await Share.share({
-        message: `Check out @${username} on Iris`,
-        url: `https://iris.app/user/${username}`,
+        message: `Check out @${username} on Bumby`,
+        url: `https://bumby.app/user/${username}`,
       });
     } catch (error) {
       console.error('Failed to share profile:', error);

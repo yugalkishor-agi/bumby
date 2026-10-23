@@ -150,6 +150,10 @@ dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
 
+    // ZEGOCLOUD CallKit offline push (FCM)
+    implementation 'im.zego:zpns-fcm:2.8.0'
+    implementation 'com.google.firebase:firebase-messaging:24.0.1'
+
     def isGifEnabled = (findProperty('expo.gif.enabled') ?: "") == "true";
     def isWebpEnabled = (findProperty('expo.webp.enabled') ?: "") == "true";
     def isWebpAnimatedEnabled = (findProperty('expo.webp.animated') ?: "") == "true";
